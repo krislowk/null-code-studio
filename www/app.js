@@ -145,7 +145,8 @@ function boot(){
   if(!workspace.files.some(f=>f.id===session.activeId))session.activeId=session.openIds[0]||null;
   applyPrefsToUI();renderTabs();renderTree();renderRecent();
   if(session.activeId)activate(session.activeId);else showWelcome(true);
-  wireUI();updateTitle();saveSession();
+  wireUI();
+  setupLanguagePicker();updateTitle();saveSession();
 }
 
 /* ============ Rendering ============ */
@@ -214,6 +215,7 @@ function activate(id){
   $('#sbLang').textContent=prettyLang(lang);
   $('#sbIndent').textContent=(prefs.insertSpaces?'Spaces: ':'Tab Size: ')+prefs.tabSize;
   updateTitle();pushRecent(id);renderRecent();saveSession();
+  if(window.ncsRefreshLanguagePicker)window.ncsRefreshLanguagePicker();
 }
 function closeTab(id){
   session.openIds=session.openIds.filter(x=>x!==id);
@@ -224,7 +226,187 @@ function closeTab(id){
   renderTabs();saveSession();
 }
 function showWelcome(v){$('#welcome').classList.toggle('hidden',!v);if(v)renderRecent();}
-function prettyLang(l){const m={javascript:'JavaScript',typescript:'TypeScript',lua:'Lua',python:'Python',html:'HTML',css:'CSS',json:'JSON',markdown:'Markdown',cpp:'C++',c:'C',java:'Java',rust:'Rust',go:'Go',shell:'Shell',yaml:'YAML',xml:'XML',plaintext:'Plain Text'};return m[l]||l;}
+function prettyLang(l){
+  const m={
+    javascript:'JavaScript',
+    typescript:'TypeScript',
+    lua:'Lua',
+    python:'Python',
+    html:'HTML',
+    css:'CSS',
+    scss:'SCSS',
+    less:'Less',
+    json:'JSON',
+    markdown:'Markdown',
+    cpp:'C++',
+    c:'C',
+    java:'Java',
+    kotlin:'Kotlin',
+    rust:'Rust',
+    go:'Go',
+    shell:'Shell',
+    yaml:'YAML',
+    xml:'XML',
+    sql:'SQL',
+    php:'PHP',
+    ruby:'Ruby',
+    swift:'Swift',
+    dart:'Dart',
+    r:'R',
+    ini:'INI',
+    dockerfile:'Dockerfile',
+    plaintext:'Plain Text'
+  };
+  return m[l]||l;
+}
+
+
+/* ---- Language picker ---- */
+function setupLanguagePicker(){
+  var btn=$('#sbLang');
+  var menu=$('#langMenu');
+  var list=$('#langMenuList');
+  var search=$('#langSearch');
+
+  if(!btn||!menu||!list)return;
+
+  var languages=[
+    ['lua','Lua'],
+    ['javascript','JavaScript'],
+    ['typescript','TypeScript'],
+    ['python','Python'],
+    ['html','HTML'],
+    ['css','CSS'],
+    ['scss','SCSS'],
+    ['less','Less'],
+    ['json','JSON'],
+    ['markdown','Markdown'],
+    ['cpp','C++'],
+    ['c','C'],
+    ['java','Java'],
+    ['kotlin','Kotlin'],
+    ['rust','Rust'],
+    ['go','Go'],
+    ['shell','Shell'],
+    ['yaml','YAML'],
+    ['xml','XML'],
+    ['sql','SQL'],
+    ['php','PHP'],
+    ['ruby','Ruby'],
+    ['swift','Swift'],
+    ['dart','Dart'],
+    ['r','R'],
+    ['ini','INI'],
+    ['dockerfile','Dockerfile'],
+    ['plaintext','Plain Text']
+  ];
+
+  function currentLang(){
+    var f=workspace.files.find(function(x){return x.id===session.activeId;});
+    return f ? f.lang : 'plaintext';
+  }
+
+  function render(filter){
+    var q=(filter||'').toLowerCase().trim();
+    var cur=currentLang();
+
+    list.innerHTML='';
+
+    languages.forEach(function(item){
+      if(q && item[1].toLowerCase().indexOf(q)===-1)return;
+
+      var b=document.createElement('button');
+      b.type='button';
+      b.className='lang-option'+(item[0]===cur?' active':'');
+      b.dataset.lang=item[0];
+      b.innerHTML='<span>'+item[1]+'</span>'
+        +(item[0]===cur?'<span class="lang-check">✓</span>':'');
+      list.appendChild(b);
+    });
+
+    if(!list.children.length){
+      var empty=document.createElement('div');
+      empty.style.cssText='padding:12px;color:var(--text-mute);font:12px sans-serif;';
+      empty.textContent='No languages found';
+      list.appendChild(empty);
+    }
+  }
+
+  function open(){
+    render(search.value);
+    menu.hidden=false;
+    setTimeout(function(){
+      search.focus();
+      search.select();
+    },30);
+  }
+
+  function close(){
+    menu.hidden=true;
+  }
+
+  btn.addEventListener('click',function(e){
+    e.stopPropagation();
+    if(menu.hidden)open();
+    else close();
+  });
+
+  list.addEventListener('click',function(e){
+    var option=e.target.closest('.lang-option');
+    if(!option)return;
+
+    var lang=option.dataset.lang;
+    var f=workspace.files.find(function(x){return x.id===session.activeId;});
+
+    if(!f){
+      close();
+      return;
+    }
+
+    f.lang=lang;
+
+    if(editor){
+      var model=editor.getModel();
+      if(model){
+        monaco.editor.setModelLanguage(model,lang);
+      }
+    }
+
+    saveWorkspace();
+    btn.innerHTML=prettyLang(lang)+' <span class="sb-lang-arrow">⌄</span>';
+    close();
+    renderTabs();
+    renderTree();
+    toast('Language: '+prettyLang(lang));
+  });
+
+  search.addEventListener('input',function(){
+    render(this.value);
+  });
+
+  search.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      e.preventDefault();
+      close();
+      btn.focus();
+    }
+  });
+
+  document.addEventListener('click',function(e){
+    if(!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)){
+      close();
+    }
+  });
+
+  window.ncsRefreshLanguagePicker=function(){
+    var f=workspace.files.find(function(x){return x.id===session.activeId;});
+    var lang=f ? f.lang : 'plaintext';
+    btn.innerHTML=prettyLang(lang)+' <span class="sb-lang-arrow">⌄</span>';
+    if(!menu.hidden)render(search.value);
+  };
+
+  window.ncsOpenLanguagePicker=open;
+}
 
 function newFile(){
   const modal=$('#newFileModal');
@@ -1015,62 +1197,82 @@ function wireUI(){
     return loadLua().then(function(F){
       var lua = F.lua;
       var lauxlib = F.lauxlib;
-      var lualib = F.lualib;
       var to_ls = F.to_luastring;
       var to_js = F.to_jsstring;
-      var interop = F.interop;
 
-      if(!lua || !lauxlib || !lualib){
+      if(!lua || !lauxlib || !to_ls || !to_js){
         throw new Error('Fengari API is incomplete');
       }
 
-      if(!interop || typeof interop.push !== 'function'){
-        throw new Error('Fengari interop API unavailable');
+      var L = lauxlib.luaL_newstate();
+      if(!L){
+        throw new Error('Could not create Lua state');
       }
 
-      var L = lauxlib.luaL_newstate();
-      if(!L) throw new Error('Could not create Lua state');
-
       try {
-        lualib.luaL_openlibs(L);
+        /*
+         * IMPORTANT:
+         * Do not call luaL_openlibs() here.
+         * Fengari's full library set also loads its JS/fengari
+         * integration library, which can produce:
+         * "js library not loaded into Lua_state".
+         *
+         * The code below provides the tiny Lua functionality we
+         * need directly inside the Lua chunk.
+         */
+        var code = [
+          '_NCS_OUTPUT = {}',
+          'function print(...)',
+          '  local args = {...}',
+          '  local out = ""',
+          '  for i = 1, #args do',
+          '    if i > 1 then out = out .. "\\t" end',
+          '    out = out .. ("" .. args[i])',
+          '  end',
+          '  _NCS_OUTPUT[#_NCS_OUTPUT + 1] = out',
+          'end',
+          src
+        ].join('\\n');
 
-        interop.push(L, function(){
-          var n = lua.lua_gettop(L);
-          var parts = [];
+        var status = lauxlib.luaL_loadstring(L, to_ls(code));
 
-          for(var i = 1; i <= n; i++){
-            if(lua.lua_isnil(L, i)){
-              parts.push('nil');
-            }else if(lua.lua_isboolean(L, i)){
-              parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
-            }else if(lua.lua_isnumber(L, i)){
-              parts.push(String(lua.lua_tonumber(L, i)));
-            }else if(lua.lua_isstring(L, i)){
-              parts.push(to_js(lua.lua_tostring(L, i)));
-            }else{
-              parts.push('<' + String(lua.luaL_typename(L, i)) + '>');
-            }
-          }
-
-          termWrite(parts.join('\t') + '\n');
-          return 0;
-        });
-
-        lua.lua_setglobal(L, to_ls('print'));
-
-        var status = lauxlib.luaL_loadstring(L, to_ls(src));
         if(status !== lua.LUA_OK){
           var msg = to_js(lua.lua_tostring(L, -1));
           throw new Error('Lua syntax error: ' + msg);
         }
 
-        var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
-        if(res !== lua.LUA_OK){
+        var result = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
+
+        if(result !== lua.LUA_OK){
           var msg2 = to_js(lua.lua_tostring(L, -1));
           throw new Error('Lua error: ' + msg2);
         }
+
+        /*
+         * Get captured output from the Lua table.
+         */
+        lua.lua_getglobal(L, to_ls('_NCS_OUTPUT'));
+
+        if(lua.lua_istable(L, -1)){
+          var count = lauxlib.luaL_len(L, -1);
+
+          for(var i = 1; i <= count; i++){
+            lua.lua_geti(L, -1, i);
+
+            if(lua.lua_isstring(L, -1)){
+              termWrite(to_js(lua.lua_tostring(L, -1)) + '\\n');
+            }
+
+            lua.lua_pop(L, 1);
+          }
+        }
+
+        lua.lua_pop(L, 1);
+
       } finally {
-        try { lua.lua_close(L); } catch(e){}
+        try {
+          lua.lua_close(L);
+        } catch(e){}
       }
     });
   }

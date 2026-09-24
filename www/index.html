@@ -90,7 +90,15 @@
       <span class="sb-item" id="sbIndent">Spaces: 2</span>
       <span class="sb-item" id="sbEncoding">UTF-8</span>
       <span class="sb-item" id="sbEol">LF</span>
-      <span class="sb-item" id="sbLang">Plain Text</span>
+      <span class="sb-lang-wrap">
+        <button class="sb-item sb-lang-btn" id="sbLang" type="button">Plain Text <span class="sb-lang-arrow">⌄</span></button>
+        <div class="lang-menu" id="langMenu" hidden>
+          <div class="lang-menu-head">
+            <input id="langSearch" type="text" placeholder="Search languages..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+          </div>
+          <div class="lang-menu-list" id="langMenuList"></div>
+        </div>
+      </span>
     </div>
   </footer>
 
