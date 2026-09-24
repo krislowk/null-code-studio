@@ -17,10 +17,13 @@
       <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M2 3h12v1H2zm0 4h12v1H2zm0 4h12v1H2z"/></svg>
     </button>
     <div class="menu-items">
-      <span class="menu-item">File</span>
-      <span class="menu-item">Edit</span>
-      <span class="menu-item">View</span>
-      <span class="menu-item">Run</span>
+      <button class="menu-item" data-menu="file">File</button>
+      <button class="menu-item" data-menu="edit">Edit</button>
+      <button class="menu-item" data-menu="view">View</button>
+      <button class="menu-item" data-menu="run">Run</button>
+    </div>
+    <div class="menu-dropdown" id="menuDropdown" hidden>
+      <div class="menu-dropdown-list" id="menuDropdownList"></div>
     </div>
     <div class="title-center" id="titleCenter">Null Code Studio</div>
     <button class="icon-btn" id="cmdBtn" title="Command Palette">

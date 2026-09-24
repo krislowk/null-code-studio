@@ -393,7 +393,95 @@ function renderPalette(q){
 }
 
 /* ============ UI wiring ============ */
+
+/* ============ Top menu (File / Edit / View / Run) ============ */
+const MENUS = {
+  file: [
+    {label:'New File', key:'Ctrl+N', run:newFile},
+    {label:'Import from Device', run:()=>$('#fileInput').click()},
+    {label:'Export to Documents', run:exportToDocuments},
+    {sep:true},
+    {label:'Save', key:'Ctrl+S', run:saveCurrent},
+    {label:'Close Tab', run:()=>{if(session.activeId)closeTab(session.activeId);}},
+    {label:'Close All Tabs', run:()=>{session.openIds=[];session.activeId=null;editor.setModel(null);renderTabs();showWelcome(true);saveSession();}},
+    {sep:true},
+    {label:'Reset Workspace', run:()=>{const b=$('#resetWs');if(b)b.click();}}
+  ],
+  edit: [
+    {label:'Find', key:'Ctrl+F', run:()=>{openSidebar();switchView('search');}},
+    {label:'Find & Replace', key:'Ctrl+H', run:()=>editor.getAction('editor.action.startFindReplaceAction').run()},
+    {label:'Go to Line', key:'Ctrl+G', run:()=>editor.getAction('editor.action.gotoLine').run()},
+    {sep:true},
+    {label:'Toggle Line Comment', key:'Ctrl+/', run:()=>editor.getAction('editor.action.commentLine').run()},
+    {label:'Format Document', run:()=>editor.getAction('editor.action.formatDocument').run()},
+    {sep:true},
+    {label:'Transform to UPPERCASE', run:()=>{const s=editor.getSelection();const t=editor.getModel().getValueInRange(s);if(t)editor.executeEdits('u',[{range:s,text:t.toUpperCase()}]);}},
+    {label:'Transform to lowercase', run:()=>{const s=editor.getSelection();const t=editor.getModel().getValueInRange(s);if(t)editor.executeEdits('l',[{range:s,text:t.toLowerCase()}]);}}
+  ],
+  view: [
+    {label:'Toggle Sidebar', key:'Ctrl+B', run:toggleSidebar},
+    {label:'Show Explorer', run:()=>{openSidebar();switchView('explorer');}},
+    {label:'Show Search', run:()=>{openSidebar();switchView('search');}},
+    {label:'Show Settings', run:()=>{openSidebar();switchView('settings');}},
+    {sep:true},
+    {label:'Command Palette', key:'Ctrl+K', run:openPalette},
+    {sep:true},
+    {label:'Toggle Word Wrap', run:()=>updatePref('wordWrap',!prefs.wordWrap)},
+    {label:'Toggle Minimap', run:()=>updatePref('minimap',!prefs.minimap)},
+    {label:'Toggle Line Numbers', run:()=>updatePref('lineNumbers',!prefs.lineNumbers)},
+    {sep:true},
+    {label:'Increase Font Size', run:()=>updatePref('fontSize',Math.min(28,prefs.fontSize+1))},
+    {label:'Decrease Font Size', run:()=>updatePref('fontSize',Math.max(10,prefs.fontSize-1))}
+  ],
+  run: [
+    {label:'No run configuration', disabled:true},
+    {label:'Coming in a future update', disabled:true}
+  ]
+};
+
+function openTopMenu(name, anchor){
+  const dd=$('#menuDropdown');const list=$('#menuDropdownList');
+  if(!dd||!list)return;
+  list.innerHTML='';
+  const items=MENUS[name]||[];
+  for(const it of items){
+    if(it.sep){const s=document.createElement('div');s.className='menu-sep';list.appendChild(s);continue;}
+    const el=document.createElement('div');
+    el.className='menu-entry'+(it.disabled?' disabled':'');
+    el.innerHTML='<span>'+esc(it.label)+'</span>'+(it.key?'<span class="m-key">'+esc(it.key)+'</span>':'');
+    if(!it.disabled)el.addEventListener('click',()=>{closeTopMenu();setTimeout(()=>it.run(),20);});
+    list.appendChild(el);
+  }
+  const rect=anchor.getBoundingClientRect();
+  dd.style.left=Math.max(4,rect.left)+'px';
+  dd.style.top=(rect.bottom+1)+'px';
+  dd.hidden=false;
+  $('.menu-item').forEach(m=>m.classList.toggle('open',m===anchor));
+}
+function closeTopMenu(){
+  const dd=$('#menuDropdown');
+  if(dd)dd.hidden=true;
+  $('.menu-item').forEach(m=>m.classList.remove('open'));
+}
+function wireMenus(){
+  $('.menu-item').forEach(m=>{
+    m.addEventListener('click',e=>{
+      e.stopPropagation();
+      const name=m.dataset.menu;
+      if(m.classList.contains('open'))closeTopMenu();
+      else openTopMenu(name,m);
+    });
+  });
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.menu-item')&&!e.target.closest('#menuDropdown'))closeTopMenu();
+  });
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape')closeTopMenu();
+  });
+}
+
 function wireUI(){
+  wireMenus();
   $('#toggleSidebar').addEventListener('click',toggleSidebar);
   $('#closeSidebar')?.addEventListener('click',closeSidebar);
   $('#scrim').addEventListener('click',closeSidebar);
@@ -487,3 +575,5 @@ function prettyLang(l){
   const m={javascript:'JavaScript',typescript:'TypeScript',lua:'Lua',python:'Python',html:'HTML',css:'CSS',json:'JSON',markdown:'Markdown',cpp:'C++',c:'C',java:'Java',rust:'Rust',go:'Go',shell:'Shell',yaml:'YAML',xml:'XML',plaintext:'Plain Text'};
   return m[l]||l;
 }
+
+window.closeTopMenu=closeTopMenu;
