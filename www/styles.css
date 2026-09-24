@@ -25,7 +25,12 @@ button{font-family:inherit}
 #app{display:flex;flex-direction:column;height:100vh;padding-top:var(--safe-top);padding-bottom:var(--safe-bottom)}
 
 /* ========= Titlebar ========= */
-.titlebar{display:flex;align-items:center;height:40px;background:var(--bg-2);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 6px;gap:2px;position:relative}
+.titlebar{display:flex;align-items:center;height:40px;background:var(--bg-2);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 6px;gap:2px;position:relative;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.titlebar::-webkit-scrollbar{display:none}
+.titlebar>.icon-btn,
+.titlebar>.menu-items,
+.titlebar>.lang-top-btn{flex-shrink:0}
+.titlebar>.title-center{flex:1 0 90px}
 .icon-btn{background:transparent;border:none;color:var(--text-dim);width:36px;height:32px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s,color .12s}
 .icon-btn:active{background:var(--bg-4);color:var(--text)}
 .menu-items{display:flex;gap:1px}
@@ -481,6 +486,7 @@ body{
 /* Top language selector */
 /* Top language selector */
 .lang-top-btn{
+  min-width:86px;
   display:flex !important;
   align-items:center;
   justify-content:center;
