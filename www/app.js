@@ -3,9 +3,52 @@ const SESSION_KEY='ncs.session.v2';
 const PREFS_KEY='ncs.prefs.v2';
 const RECENT_KEY='ncs.recent.v2';
 
-const LANG_MAP={lua:'lua',luau:'lua',js:'javascript',mjs:'javascript',ts:'typescript',py:'python',html:'html',htm:'html',css:'css',json:'json',md:'markdown',cpp:'cpp',cc:'cpp',c:'c',h:'c',java:'java',rs:'rust',go:'go',sh:'shell',bash:'shell',yml:'yaml',yaml:'yaml',xml:'xml',txt:'plaintext'};
-const LANG_ICON={lua:'L',javascript:'JS',typescript:'TS',python:'Py',html:'<>',css:'#',json:'{}',markdown:'M',cpp:'C+',c:'C',java:'Jv',rust:'Rs',go:'Go',shell:'$',yaml:'Y',xml:'X',plaintext:'·'};
-const LANG_COLOR={lua:'#4b8f8f',javascript:'#f1e05a',typescript:'#3178c6',python:'#3572A5',html:'#e34c26',css:'#7a5fa8',json:'#cbcb41',markdown:'#4a9eff',cpp:'#f34b7d',c:'#888',java:'#b07219',rust:'#dea584',go:'#00ADD8',shell:'#89e051',yaml:'#cb171e',xml:'#0060ac',plaintext:'#666'};
+const LANG_MAP={
+  lua:'lua',luau:'lua',
+  js:'javascript',mjs:'javascript',cjs:'javascript',
+  ts:'typescript',tsx:'typescript',
+  py:'python',pyw:'python',
+  html:'html',htm:'html',
+  css:'css',scss:'scss',less:'less',
+  json:'json',jsonc:'json',
+  md:'markdown',markdown:'markdown',
+  cpp:'cpp',cc:'cpp',cxx:'cpp',hpp:'cpp',hh:'cpp',hxx:'cpp',
+  c:'c',h:'c',
+  java:'java',kt:'kotlin',kts:'kotlin',
+  rs:'rust',
+  go:'go',
+  sh:'shell',bash:'shell',zsh:'shell',
+  yml:'yaml',yaml:'yaml',
+  xml:'xml',svg:'xml',
+  sql:'sql',
+  php:'php',
+  rb:'ruby',
+  swift:'swift',
+  dart:'dart',
+  r:'r',
+  toml:'ini',
+  ini:'ini',
+  dockerfile:'dockerfile',
+  vue:'html',
+  svelte:'html',
+  txt:'plaintext'
+};
+const LANG_ICON={
+  lua:'L',javascript:'JS',typescript:'TS',python:'Py',
+  html:'<>',css:'#',scss:'S#',less:'L#',json:'{}',markdown:'M',
+  cpp:'C+',c:'C',java:'Jv',kotlin:'Kt',rust:'Rs',go:'Go',
+  shell:'$',yaml:'Y',xml:'X',sql:'SQL',php:'PHP',ruby:'Rb',
+  swift:'Sw',dart:'D',r:'R',ini:'=',dockerfile:'D',plaintext:'·'
+};
+const LANG_COLOR={
+  lua:'#4b8f8f',javascript:'#f1e05a',typescript:'#3178c6',python:'#3572A5',
+  html:'#e34c26',css:'#7a5fa8',scss:'#c6538c',less:'#1d365d',
+  json:'#cbcb41',markdown:'#4a9eff',cpp:'#f34b7d',c:'#888',
+  java:'#b07219',kotlin:'#A97BFF',rust:'#dea584',go:'#00ADD8',
+  shell:'#89e051',yaml:'#cb171e',xml:'#0060ac',sql:'#dad8a8',
+  php:'#4F5D95',ruby:'#701516',swift:'#F05138',dart:'#00B4AB',
+  r:'#198CE7',ini:'#777',dockerfile:'#2496ED',plaintext:'#666'
+};
 const DEFAULT_PREFS={fontSize:14,tabSize:2,insertSpaces:true,wordWrap:true,minimap:false,lineNumbers:true,smoothCursor:true,highlightLine:true};
 
 function loadJSON(key,fallback){try{const r=localStorage.getItem(key);if(r)return JSON.parse(r);}catch{}return fallback();}
@@ -809,13 +852,6 @@ function wireUI(){
 
 /* ============ NCS Multi-Language Runtime ============ */
 (function(){
-  var FENGARI_LOCAL = 'vendor/fengari-web.js';
-  var FENGARI_CDNS = [
-    'https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js',
-    'https://unpkg.com/fengari-web@0.1.4/dist/fengari-web.js'
-  ];
-  var PYODIDE_CDN = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
-
   var luaPromise = null;
   var pyodidePromise = null;
   var pyodideInstance = null;
@@ -824,168 +860,218 @@ function wireUI(){
   try { configs = JSON.parse(localStorage.getItem(RUN_KEY) || '[]'); } catch(e){}
 
   function el(id){ return document.getElementById(id); }
+
   function toast2(m){
-    var t = el('toast'); if(!t) return;
-    t.textContent = m; t.hidden = false;
-    t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
+    var t = el('toast');
+    if(!t) return;
+    t.textContent = m;
+    t.hidden = false;
+    t.style.animation = 'none';
+    void t.offsetWidth;
+    t.style.animation = '';
     clearTimeout(toast2._t);
-    toast2._t = setTimeout(function(){ t.hidden = true; }, 1800);
+    toast2._t = setTimeout(function(){
+      t.hidden = true;
+    }, 1800);
   }
-  function saveConfigs(){ try{ localStorage.setItem(RUN_KEY, JSON.stringify(configs)); }catch(e){} }
+
+  function saveConfigs(){
+    try {
+      localStorage.setItem(RUN_KEY, JSON.stringify(configs));
+    } catch(e){}
+  }
 
   function openTerminal(){
-    var t = el('terminal'); if(!t) return;
+    var t = el('terminal');
+    if(!t) return;
     t.hidden = false;
-    var ed = el('editor'); if(ed) ed.style.paddingBottom = '38vh';
+    var ed = el('editor');
+    if(ed) ed.style.paddingBottom = '38vh';
   }
+
   function closeTerminal(){
-    var t = el('terminal'); if(!t) return;
+    var t = el('terminal');
+    if(!t) return;
     t.hidden = true;
-    var ed = el('editor'); if(ed) ed.style.paddingBottom = '';
+    var ed = el('editor');
+    if(ed) ed.style.paddingBottom = '';
   }
+
   function termWrite(text, cls){
-    var b = el('terminalBody'); if(!b) return;
+    var b = el('terminalBody');
+    if(!b) return;
     var span = document.createElement('span');
     span.className = 't-line-' + (cls || 'out');
     span.textContent = text;
     b.appendChild(span);
     b.scrollTop = b.scrollHeight;
   }
-  function termClear(){ var b = el('terminalBody'); if(b) b.innerHTML = ''; }
 
-  /* ---- robust script loader: try local, then fetch+eval, then CDN scripts ---- */
-  function loadScriptFromUrls(urls, testFn){
-    return new Promise(function(resolve, reject){
-      if(testFn()) return resolve();
-      var i = 0;
-      function tryFetch(){
-        if(i >= urls.length) return tryScriptTag(0);
-        var url = urls[i++];
-        fetch(url).then(function(r){
-          if(!r.ok) throw new Error('HTTP ' + r.status);
-          return r.text();
-        }).then(function(code){
-          try {
-            (0, eval)(code);
-            if(testFn()) resolve();
-            else tryFetch();
-          } catch(e){
-            tryFetch();
-          }
-        }).catch(function(){ tryFetch(); });
-      }
-      function tryScriptTag(j){
-        if(j >= urls.length) return reject(new Error('All sources failed'));
-        var s = document.createElement('script');
-        s.src = urls[j];
-        s.onload = function(){ testFn() ? resolve() : tryScriptTag(j+1); };
-        s.onerror = function(){ tryScriptTag(j+1); };
-        document.head.appendChild(s);
-      }
-      tryFetch();
-    });
+  function termClear(){
+    var b = el('terminalBody');
+    if(b) b.innerHTML = '';
   }
 
+  /* ---- Local Lua runtime ---- */
   function loadLua(){
     if(luaPromise) return luaPromise;
 
-    if(window.fengari && window.fengari.lua){
-      luaPromise = Promise.resolve(window.fengari);
-      return luaPromise;
-    }
+    luaPromise = new Promise(function(resolve, reject){
+      /* Already exposed by the static script in index.html. */
+      if(window.fengari && window.fengari.lua){
+        resolve(window.fengari);
+        return;
+      }
 
-    luaPromise = loadScriptFromUrls(
-      [FENGARI_LOCAL].concat(FENGARI_CDNS),
-      function(){
-        return !!(window.fengari && window.fengari.lua);
-      }
-    ).then(function(){
-      if(!window.fengari || !window.fengari.lua){
-        throw new Error(
-          'Fengari loaded but global API is missing. globals: ' +
-          Object.keys(window).filter(function(k){
-            return /fengari|lua/i.test(k);
-          }).join(', ')
+      /*
+       * Capacitor/WebView can execute the UMD bundle without putting the
+       * CommonJS export on window. Fetch the local asset and evaluate it
+       * with a tiny CommonJS-compatible wrapper.
+       */
+      fetch('vendor/fengari-web.js').then(function(response){
+        if(!response.ok){
+          throw new Error('HTTP ' + response.status + ' while loading local Fengari');
+        }
+        return response.text();
+      }).then(function(code){
+        var module = { exports: {} };
+        var exports = module.exports;
+
+        /*
+         * The Fengari UMD header chooses module.exports when `module`
+         * exists. Supplying it here gives us the exact bundle export.
+         */
+        var factory = new Function(
+          'module',
+          'exports',
+          code + '\n;return module.exports;'
         );
-      }
-      return window.fengari;
-    }).catch(function(err){
-      luaPromise = null;
-      throw new Error(
-        'Lua runtime failed: ' +
-        (err && err.message ? err.message : String(err))
-      );
+
+        var result = factory(module, exports);
+
+        if(!result || !result.lua || !result.lauxlib || !result.lualib){
+          throw new Error(
+            'Local Fengari loaded, but its API is incomplete'
+          );
+        }
+
+        window.fengari = result;
+        resolve(result);
+      }).catch(function(err){
+        luaPromise = null;
+        reject(new Error(
+          'Local Lua runtime failed: ' +
+          (err && err.message ? err.message : String(err))
+        ));
+      });
     });
 
     return luaPromise;
   }
 
+  /* ---- Python ---- */
+  var PYODIDE_CDN = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
+
   function loadPyodide(){
     if(pyodideInstance) return Promise.resolve(pyodideInstance);
     if(pyodidePromise) return pyodidePromise;
-    pyodidePromise = loadScriptFromUrls(
-      [PYODIDE_CDN],
-      function(){ return !!window.loadPyodide; }
-    ).then(function(){
-      return window.loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/' });
+
+    pyodidePromise = new Promise(function(resolve, reject){
+      if(window.loadPyodide){
+        resolve(window.loadPyodide({
+          indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/'
+        }));
+        return;
+      }
+
+      var s = document.createElement('script');
+      s.src = PYODIDE_CDN;
+      s.onload = function(){
+        if(!window.loadPyodide){
+          reject(new Error('Pyodide loaded but API is missing'));
+          return;
+        }
+        window.loadPyodide({
+          indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/'
+        }).then(resolve).catch(reject);
+      };
+      s.onerror = function(){
+        reject(new Error('Python runtime could not be loaded'));
+      };
+      document.head.appendChild(s);
     }).then(function(py){
       pyodideInstance = py;
       return py;
+    }).catch(function(err){
+      pyodidePromise = null;
+      throw err;
     });
+
     return pyodidePromise;
   }
 
   /* ---- Lua ---- */
   function runLua(src){
     return loadLua().then(function(F){
-      var lua = F.lua, lauxlib = F.lauxlib, lualib = F.lualib;
-      var to_ls = F.to_luastring, to_js = F.to_jsstring;
+      var lua = F.lua;
+      var lauxlib = F.lauxlib;
+      var lualib = F.lualib;
+      var to_ls = F.to_luastring;
+      var to_js = F.to_jsstring;
       var interop = F.interop;
+
+      if(!lua || !lauxlib || !lualib){
+        throw new Error('Fengari API is incomplete');
+      }
 
       if(!interop || typeof interop.push !== 'function'){
         throw new Error('Fengari interop API unavailable');
       }
 
       var L = lauxlib.luaL_newstate();
-      lualib.luaL_openlibs(L);
+      if(!L) throw new Error('Could not create Lua state');
 
-      interop.push(L, function(){
-        var n = lua.lua_gettop(L);
-        var parts = [];
-        for(var i = 1; i <= n; i++){
-          if(lua.lua_isstring(L, i)){
-            parts.push(to_js(lua.lua_tostring(L, i)));
-          }else if(lua.lua_isnumber(L, i)){
-            parts.push(String(lua.lua_tonumber(L, i)));
-          }else if(lua.lua_isboolean(L, i)){
-            parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
-          }else if(lua.lua_isnil(L, i)){
-            parts.push('nil');
-          }else{
-            parts.push('<value>');
+      try {
+        lualib.luaL_openlibs(L);
+
+        interop.push(L, function(){
+          var n = lua.lua_gettop(L);
+          var parts = [];
+
+          for(var i = 1; i <= n; i++){
+            if(lua.lua_isnil(L, i)){
+              parts.push('nil');
+            }else if(lua.lua_isboolean(L, i)){
+              parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
+            }else if(lua.lua_isnumber(L, i)){
+              parts.push(String(lua.lua_tonumber(L, i)));
+            }else if(lua.lua_isstring(L, i)){
+              parts.push(to_js(lua.lua_tostring(L, i)));
+            }else{
+              parts.push('<' + String(lua.luaL_typename(L, i)) + '>');
+            }
           }
+
+          termWrite(parts.join('\t') + '\n');
+          return 0;
+        });
+
+        lua.lua_setglobal(L, to_ls('print'));
+
+        var status = lauxlib.luaL_loadstring(L, to_ls(src));
+        if(status !== lua.LUA_OK){
+          var msg = to_js(lua.lua_tostring(L, -1));
+          throw new Error('Lua syntax error: ' + msg);
         }
-        termWrite(parts.join('\t') + '\n');
-        return 0;
-      });
 
-      lua.lua_setglobal(L, to_ls('print'));
-
-      var status = lauxlib.luaL_loadstring(L, to_ls(src));
-      if(status !== lua.LUA_OK){
-        var msg = to_js(lua.lua_tostring(L, -1));
-        lua.lua_close(L);
-        throw new Error(msg);
+        var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
+        if(res !== lua.LUA_OK){
+          var msg2 = to_js(lua.lua_tostring(L, -1));
+          throw new Error('Lua error: ' + msg2);
+        }
+      } finally {
+        try { lua.lua_close(L); } catch(e){}
       }
-
-      var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
-      if(res !== lua.LUA_OK){
-        var msg2 = to_js(lua.lua_tostring(L, -1));
-        lua.lua_close(L);
-        throw new Error(msg2);
-      }
-
-      lua.lua_close(L);
     });
   }
 
@@ -1052,10 +1138,15 @@ function wireUI(){
   }
 
   var RUNTIMES = {
-    lua:        { fn: runLua,    label: 'Lua 5.3 (fengari)' },
+    lua:        { fn: runLua,    label: 'Lua 5.3 (local Fengari)' },
     python:     { fn: runPython, label: 'Python 3.12 (Pyodide)' },
     javascript: { fn: runJs,     label: 'JavaScript (sandboxed)' },
     typescript: { fn: runTs,     label: 'TypeScript (stripped)' }
+  };
+
+  var EDITOR_ONLY_LANGS = {
+    cpp:1,c:1,java:1,kotlin:1,rust:1,go:1,shell:1,yaml:1,xml:1,
+    sql:1,php:1,ruby:1,swift:1,dart:1,r:1,ini:1,scss:1,less:1
   };
 
   function runActiveFile(){
@@ -1077,7 +1168,7 @@ function wireUI(){
     termWrite('> ' + f.name + '\n', 'cmd');
 
     if(!rt){
-      termWrite('No runtime for "' + lang + '". Supported: .lua .luau .py .js .ts\n', 'err');
+      termWrite('No local runtime for "' + lang + '". This language has editor support; runtime support is not installed.\n', 'err');
       return;
     }
     if(lang === 'python'){
