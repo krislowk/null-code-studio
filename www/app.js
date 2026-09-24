@@ -67,7 +67,7 @@ require(['vs/editor/editor.main'],()=>{
     cursorBlinking:prefs.smoothCursor?'smooth':'blink',
     cursorSmoothCaretAnimation:'on',
     renderLineHighlight:prefs.highlightLine?'all':'none',
-    contextmenu:true,quickSuggestions:false,suggestOnTriggerCharacters:false,
+    contextmenu:false,quickSuggestions:false,suggestOnTriggerCharacters:false,
     padding:{top:12,bottom:12},lineNumbersMinChars:3,glyphMargin:false,folding:true,
     renderWhitespace:'selection',tabSize:prefs.tabSize,insertSpaces:prefs.insertSpaces,
     mouseWheelZoom:true,
@@ -89,6 +89,44 @@ require(['vs/editor/editor.main'],()=>{
   const ed=$('#editor');let lastY=0,lastTop=0;
   ed.addEventListener('touchstart',e=>{if(e.touches.length===2){lastY=(e.touches[0].clientY+e.touches[1].clientY)/2;lastTop=editor.getScrollTop();}},{passive:true});
   ed.addEventListener('touchmove',e=>{if(e.touches.length===2){const y=(e.touches[0].clientY+e.touches[1].clientY)/2;editor.setScrollTop(lastTop+(lastY-y)*2.2);e.preventDefault();}},{passive:false});
+
+  /* NCS_LONGPRESS: hold 450ms to select word under finger */
+  (function(){
+    var pressTimer=null, startX=0, startY=0, moved=false;
+    function clearPress(){ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }
+    function wordAt(x,y){
+      try{
+        if(!editor||!editor.getTargetAtClientPoint) return null;
+        var t=editor.getTargetAtClientPoint(x,y);
+        if(!t||!t.position) return null;
+        var m=editor.getModel(); if(!m) return null;
+        var w=m.getWordAtPosition(t.position);
+        if(!w) return null;
+        return {line:t.position.lineNumber, start:w.startColumn, end:w.endColumn};
+      }catch(e){ return null; }
+    }
+    ed.addEventListener('touchstart',function(e){
+      if(e.touches.length!==1){ clearPress(); return; }
+      var t=e.touches[0]; startX=t.clientX; startY=t.clientY; moved=false;
+      clearPress();
+      pressTimer=setTimeout(function(){
+        if(moved) return;
+        var w=wordAt(startX,startY);
+        if(w){
+          editor.setSelection(new monaco.Range(w.line,w.start,w.line,w.end));
+          editor.focus();
+          if(navigator.vibrate) try{ navigator.vibrate(15); }catch(_e){}
+        }
+      },450);
+    },{passive:true});
+    ed.addEventListener('touchmove',function(e){
+      if(e.touches.length!==1) return;
+      var t=e.touches[0];
+      if(Math.abs(t.clientX-startX)>8||Math.abs(t.clientY-startY)>8){ moved=true; clearPress(); }
+    },{passive:true});
+    ed.addEventListener('touchend',clearPress,{passive:true});
+    ed.addEventListener('touchcancel',clearPress,{passive:true});
+  })();
 
   boot();
 });
@@ -668,8 +706,8 @@ function wireUI(){
       if(name === '__minimap'){ if(typeof updatePref==='function' && typeof prefs!=='undefined') updatePref('minimap', !prefs.minimap); return; }
       if(name === '__fontUp'){ if(typeof updatePref==='function' && typeof prefs!=='undefined') updatePref('fontSize', Math.min(28, prefs.fontSize+1)); return; }
       if(name === '__fontDown'){ if(typeof updatePref==='function' && typeof prefs!=='undefined') updatePref('fontSize', Math.max(10, prefs.fontSize-1)); return; }
-      if(name === '__run'){ if(window.runActiveFile) window.runActiveFile(); return; }
-      if(name === '__runConfig'){ if(window.openRunConfig) window.openRunConfig(); return; }
+      if(name === '__run'){ if(window.runActiveFile) window.runActiveFile(); else toast2('Run not ready'); return; }
+      if(name === '__runConfig'){ if(window.openRunConfig) window.openRunConfig(); else toast2('Run config not ready'); return; }
       var fn = window[name];
       if(typeof fn === 'function') fn();
       else toast2('Not available: ' + name);
@@ -811,36 +849,34 @@ function wireUI(){
   }, 150);
 })();
 
-/* ============ NCS Run System ============ */
+
+/* ============ NCS Run System (wasmoon) ============ */
 (function(){
-  var FENGARI_URL = 'https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js';
+  var WASMOON_URL = 'https://cdn.jsdelivr.net/npm/wasmoon@1.16.0/dist/glue.js';
   var RUN_KEY = 'ncs.runconfigs.v1';
-  var fengariPromise = null;
+  var wasmoonPromise = null;
   var configs = [];
   try { configs = JSON.parse(localStorage.getItem(RUN_KEY) || '[]'); } catch(e){}
 
   function el(id){ return document.getElementById(id); }
-  function saveConfigs(){ try { localStorage.setItem(RUN_KEY, JSON.stringify(configs)); } catch(e){} }
+  function saveConfigs(){ try{ localStorage.setItem(RUN_KEY, JSON.stringify(configs)); }catch(e){} }
   function ncsToast(msg){
     var t = el('toast'); if(!t) return;
     t.textContent = msg; t.hidden = false;
-    t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
+    t.style.animation='none'; void t.offsetWidth; t.style.animation='';
     clearTimeout(ncsToast._t);
-    ncsToast._t = setTimeout(function(){ t.hidden = true; }, 1600);
+    ncsToast._t = setTimeout(function(){ t.hidden=true; }, 1600);
   }
 
-  /* ---- Terminal ---- */
   function openTerminal(){
     var t = el('terminal'); if(!t) return;
     t.hidden = false;
-    var ed = el('editor');
-    if(ed) ed.style.paddingBottom = '38vh';
+    var ed = el('editor'); if(ed) ed.style.paddingBottom = '38vh';
   }
   function closeTerminal(){
     var t = el('terminal'); if(!t) return;
     t.hidden = true;
-    var ed = el('editor');
-    if(ed) ed.style.paddingBottom = '';
+    var ed = el('editor'); if(ed) ed.style.paddingBottom = '';
   }
   function termWrite(text, cls){
     var b = el('terminalBody'); if(!b) return;
@@ -850,67 +886,51 @@ function wireUI(){
     b.appendChild(span);
     b.scrollTop = b.scrollHeight;
   }
-  function termClear(){
-    var b = el('terminalBody');
-    if(b) b.innerHTML = '';
-  }
+  function termClear(){ var b = el('terminalBody'); if(b) b.innerHTML=''; }
 
-  /* ---- Lua via fengari ---- */
-  function loadFengari(){
-    if(window.fengari) return Promise.resolve();
-    if(fengariPromise) return fengariPromise;
-    fengariPromise = new Promise(function(resolve, reject){
+  function loadWasmoon(){
+    if(window.wasmoon && window.wasmoon.LuaFactory) return Promise.resolve();
+    if(wasmoonPromise) return wasmoonPromise;
+    wasmoonPromise = new Promise(function(resolve, reject){
       var s = document.createElement('script');
-      s.src = FENGARI_URL;
-      s.onload = function(){ resolve(); };
+      s.src = WASMOON_URL;
+      s.onload = function(){
+        if(window.wasmoon && window.wasmoon.LuaFactory) resolve();
+        else reject(new Error('wasmoon loaded but LuaFactory missing'));
+      };
       s.onerror = function(){ reject(new Error('Failed to load Lua runtime from CDN')); };
       document.head.appendChild(s);
     });
-    return fengariPromise;
+    return wasmoonPromise;
   }
+
+  function fmtLua(v){
+    if(v === null || v === undefined) return String(v);
+    if(typeof v === 'object'){
+      try { return JSON.stringify(v); } catch(e){ return String(v); }
+    }
+    return String(v);
+  }
+
   function runLua(src){
-    return loadFengari().then(function(){
-      var F = window.fengari;
-      var lua = F.lua, lauxlib = F.lauxlib, lualib = F.lualib;
-      var to_luastring = F.to_luastring, to_jsstring = F.to_jsstring;
-
-      var L = lauxlib.luaL_newstate();
-      lualib.luaL_openlibs(L);
-
-      var printFn = function(L){
-        var n = lua.lua_gettop(L);
-        var parts = [];
-        for(var i=1; i<=n; i++){
-          if(lua.lua_isstring(L, i)) parts.push(to_jsstring(lua.lua_tostring(L, i)));
-          else if(lua.lua_isnumber(L, i)) parts.push(String(lua.lua_tonumber(L, i)));
-          else if(lua.lua_isboolean(L, i)) parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
-          else if(lua.lua_isnil(L, i)) parts.push('nil');
-          else parts.push('<' + lua.lua_typename(L, lua.lua_type(L, i)) + '>');
-        }
-        termWrite(parts.join('\t') + '\n');
-        return 0;
-      };
-      var push = lua.lua_pushjsfunction || lua.lua_pushcfunction;
-      push(L, printFn);
-      lua.lua_setglobal(L, to_luastring('print'));
-
-      var status = lauxlib.luaL_loadstring(L, to_luastring(src));
-      if(status !== lua.LUA_OK){
-        var msg = to_jsstring(lua.lua_tostring(L, -1));
-        lua.lua_close(L);
-        throw new Error(msg);
-      }
-      var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
-      if(res !== lua.LUA_OK){
-        var msg2 = to_jsstring(lua.lua_tostring(L, -1));
-        lua.lua_close(L);
-        throw new Error(msg2);
-      }
-      lua.lua_close(L);
+    return loadWasmoon().then(function(){
+      var factory = new window.wasmoon.LuaFactory();
+      return factory.createEngine().then(function(lua){
+        lua.global.set('print', function(){
+          var parts = [];
+          for(var i=0; i<arguments.length; i++) parts.push(fmtLua(arguments[i]));
+          termWrite(parts.join('\t') + '\n');
+        });
+        return lua.doString(src).then(function(){
+          try { lua.global.close(); } catch(e){}
+        }, function(err){
+          try { lua.global.close(); } catch(e){}
+          throw err;
+        });
+      });
     });
   }
 
-  /* ---- JavaScript via Worker ---- */
   function runJs(src){
     return new Promise(function(resolve){
       var workerSrc = [
@@ -920,10 +940,7 @@ function wireUI(){
         '  warn:  function(){ send("err", arguments); },',
         '  error: function(){ send("err", arguments); }',
         '};',
-        'function fmt(x){',
-        '  try { return typeof x === "object" ? JSON.stringify(x) : String(x); }',
-        '  catch(e){ return String(x); }',
-        '}',
+        'function fmt(x){ try { return typeof x === "object" ? JSON.stringify(x) : String(x); } catch(e){ return String(x); } }',
         'function send(kind, args){',
         '  var arr = Array.prototype.slice.call(args).map(fmt);',
         '  self.postMessage({ t: kind, m: arr.join(" ") + "\\n" });',
@@ -956,7 +973,6 @@ function wireUI(){
     });
   }
 
-  /* ---- Main run ---- */
   function runActiveFile(){
     if(!window.editor){ ncsToast('Editor not ready'); return; }
     var f = null;
@@ -981,7 +997,6 @@ function wireUI(){
     });
   }
 
-  /* ---- Run config modal ---- */
   function populateRunEntry(){
     var sel = el('runCfgEntry'); if(!sel) return;
     sel.innerHTML = '<option value="">(active file)</option>';
@@ -1002,12 +1017,8 @@ function wireUI(){
     configs.forEach(function(c){
       var item = document.createElement('div');
       item.className = 'run-list-item' + ((m && m.dataset.editing === c.id) ? ' active' : '');
-      var nm = document.createElement('span');
-      nm.className = 'run-cfg-name';
-      nm.textContent = c.name || 'Untitled';
-      var tag = document.createElement('span');
-      tag.className = 'run-cfg-tag';
-      tag.textContent = (c.runtime || 'lua').toUpperCase();
+      var nm = document.createElement('span'); nm.className = 'run-cfg-name'; nm.textContent = c.name || 'Untitled';
+      var tag = document.createElement('span'); tag.className = 'run-cfg-tag'; tag.textContent = (c.runtime || 'lua').toUpperCase();
       item.appendChild(nm); item.appendChild(tag);
       item.addEventListener('click', function(){
         el('runCfgName').value = c.name || '';
@@ -1050,7 +1061,7 @@ function wireUI(){
       args: (el('runCfgArgs').value || '').trim()
     };
     var idx = -1;
-    for(var i=0;i<configs.length;i++){ if(configs[i].id === cfg.id){ idx = i; break; } }
+    for(var i=0; i<configs.length; i++){ if(configs[i].id === cfg.id){ idx = i; break; } }
     if(idx >= 0) configs[idx] = cfg; else configs.push(cfg);
     saveConfigs();
     m.dataset.editing = cfg.id;
@@ -1068,10 +1079,9 @@ function wireUI(){
     ncsToast('Deleted');
   }
 
-  /* ---- Wire controls ---- */
   var btn;
-  if((btn = el('clearTerm')))     btn.addEventListener('click', termClear);
-  if((btn = el('closeTerm')))     btn.addEventListener('click', closeTerminal);
+  if((btn = el('clearTerm')))      btn.addEventListener('click', termClear);
+  if((btn = el('closeTerm')))      btn.addEventListener('click', closeTerminal);
   if((btn = el('closeRunConfig'))) btn.addEventListener('click', function(){ el('runConfigModal').hidden = true; });
   if((btn = el('saveRunConfig')))  btn.addEventListener('click', saveRunConfig);
   if((btn = el('deleteRunCfg')))   btn.addEventListener('click', deleteRunConfig);
