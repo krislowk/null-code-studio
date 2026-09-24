@@ -756,117 +756,35 @@ function wireUI(){
   });
   document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeMenu(); });
 
-  /* ============ Selection bar ============ */
-  var bar = null;
-  function ensureBar(){
-    if(bar && document.body.contains(bar)) return bar;
-    bar = document.getElementById('selBar');
-    if(bar) return bar;
-    bar = document.createElement('div');
-    bar.id = 'selBar';
-    bar.className = 'sel-bar';
-    bar.hidden = true;
-    bar.innerHTML =
-      '<button class="sel-btn" data-act="copy">Copy</button>' +
-      '<button class="sel-btn" data-act="cut">Cut</button>' +
-      '<button class="sel-btn" data-act="paste">Paste</button>' +
-      '<button class="sel-btn" data-act="all">All</button>' +
-      '<button class="sel-btn sel-close" data-act="close">X</button>';
-    bar.addEventListener('click', function(e){
-      var b = e.target.closest('.sel-btn'); if(!b) return;
-      var a = b.dataset.act;
-      if(a === 'copy') copySel();
-      else if(a === 'cut') cutSel();
-      else if(a === 'paste') pasteFromClipboard();
-      else if(a === 'all'){ var ed=window.editor; if(ed){ var m=ed.getModel(); if(m) ed.setSelection(m.getFullModelRange()); } }
-      else if(a === 'close') bar.hidden = true;
-    });
-    var wrap = document.querySelector('.editor-wrap');
-    if(wrap) wrap.appendChild(bar);
-    return bar;
-  }
-
-  function fallbackCopy(text){
-    var ta = document.createElement('textarea');
-    ta.value = text; ta.style.position='fixed'; ta.style.top='0'; ta.style.opacity='0';
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    try { document.execCommand('copy'); toast2('Copied'); }
-    catch(e){ toast2('Copy failed'); }
-    document.body.removeChild(ta);
-  }
-
-  function copySel(){
-    var ed = window.editor; if(!ed) return;
-    var sel = ed.getSelection(); var m = ed.getModel(); if(!m) return;
-    var text = m.getValueInRange(sel);
-    if(!text){ toast2('Nothing selected'); return; }
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(function(){ toast2('Copied'); }, function(){ fallbackCopy(text); });
-    } else fallbackCopy(text);
-  }
-  function cutSel(){
-    var ed = window.editor; if(!ed) return;
-    var sel = ed.getSelection(); var m = ed.getModel(); if(!m) return;
-    var text = m.getValueInRange(sel);
-    if(!text){ toast2('Nothing selected'); return; }
-    var doCut = function(){ ed.executeEdits('cut', [{range:sel,text:''}]); ed.focus(); toast2('Cut'); };
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(doCut, function(){ fallbackCopy(text); doCut(); });
-    } else { fallbackCopy(text); doCut(); }
-  }
-  function pasteFromClipboard(){
-    var ed = window.editor; if(!ed) return;
-    if(!navigator.clipboard || !navigator.clipboard.readText){ toast2('Paste not supported'); return; }
-    navigator.clipboard.readText().then(function(text){
-      if(!text) return;
-      var sel = ed.getSelection();
-      ed.executeEdits('paste', [{range:sel, text:text}]);
-      ed.focus();
-    }, function(){ toast2('Paste blocked'); });
-  }
-
-  function updateSelBar(){
-    var b = ensureBar();
-    var ed = window.editor;
-    if(!ed){ b.hidden = true; return; }
-    var sel = ed.getSelection();
-    if(!sel || sel.isEmpty()){ b.hidden = true; return; }
-    b.hidden = false;
-  }
-
-  var tries = 0;
-  var wait = setInterval(function(){
-    tries++;
-    var ed = window.editor;
-    if(ed){
-      clearInterval(wait);
-      ed.onDidChangeCursorSelection(function(){ updateSelBar(); });
-      ed.onDidFocusEditorText(function(){ updateSelBar(); });
-      ed.onDidBlurEditorText(function(){ var b=ensureBar(); b.hidden=true; });
-      return;
-    }
-    if(tries > 100) clearInterval(wait);
-  }, 150);
-})();
+  
 
 
-/* ============ NCS Run System (wasmoon) ============ */
+
+/* ============ NCS Multi-Language Runtime ============ */
 (function(){
-  var WASMOON_URL = 'https://cdn.jsdelivr.net/npm/wasmoon@1.16.0/dist/glue.js';
+  var FENGARI_LOCAL = 'vendor/fengari-web.js';
+  var FENGARI_CDNS = [
+    'https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js',
+    'https://unpkg.com/fengari-web@0.1.4/dist/fengari-web.js'
+  ];
+  var PYODIDE_CDN = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
+
+  var luaPromise = null;
+  var pyodidePromise = null;
+  var pyodideInstance = null;
   var RUN_KEY = 'ncs.runconfigs.v1';
-  var fengariPromise = null;
   var configs = [];
   try { configs = JSON.parse(localStorage.getItem(RUN_KEY) || '[]'); } catch(e){}
 
   function el(id){ return document.getElementById(id); }
-  function saveConfigs(){ try{ localStorage.setItem(RUN_KEY, JSON.stringify(configs)); }catch(e){} }
-  function ncsToast(msg){
+  function toast2(m){
     var t = el('toast'); if(!t) return;
-    t.textContent = msg; t.hidden = false;
-    t.style.animation='none'; void t.offsetWidth; t.style.animation='';
-    clearTimeout(ncsToast._t);
-    ncsToast._t = setTimeout(function(){ t.hidden=true; }, 1600);
+    t.textContent = m; t.hidden = false;
+    t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
+    clearTimeout(toast2._t);
+    toast2._t = setTimeout(function(){ t.hidden = true; }, 1800);
   }
+  function saveConfigs(){ try{ localStorage.setItem(RUN_KEY, JSON.stringify(configs)); }catch(e){} }
 
   function openTerminal(){
     var t = el('terminal'); if(!t) return;
@@ -886,51 +804,77 @@ function wireUI(){
     b.appendChild(span);
     b.scrollTop = b.scrollHeight;
   }
-  function termClear(){ var b = el('terminalBody'); if(b) b.innerHTML=''; }
+  function termClear(){ var b = el('terminalBody'); if(b) b.innerHTML = ''; }
 
-  function loadFengari(){
-    if(window.fengari && window.fengari.lua) return Promise.resolve();
-    if(fengariPromise) return fengariPromise;
-    fengariPromise = new Promise(function(resolve, reject){
-      var paths = ['vendor/fengari-web.js','./vendor/fengari-web.js','https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js'];
+  /* ---- robust script loader: try local, then fetch+eval, then CDN scripts ---- */
+  function loadScriptFromUrls(urls, testFn){
+    return new Promise(function(resolve, reject){
+      if(testFn()) return resolve();
       var i = 0;
-      function tryNext(){
-        if(i >= paths.length){ reject(new Error('Could not load Lua runtime')); return; }
-        var src = paths[i++];
+      function tryFetch(){
+        if(i >= urls.length) return tryScriptTag(0);
+        var url = urls[i++];
+        fetch(url).then(function(r){
+          if(!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        }).then(function(code){
+          try {
+            (0, eval)(code);
+            if(testFn()) resolve();
+            else tryFetch();
+          } catch(e){
+            tryFetch();
+          }
+        }).catch(function(){ tryFetch(); });
+      }
+      function tryScriptTag(j){
+        if(j >= urls.length) return reject(new Error('All sources failed'));
         var s = document.createElement('script');
-        s.src = src;
-        s.onload = function(){
-          if(window.fengari && window.fengari.lua) resolve();
-          else tryNext();
-        };
-        s.onerror = function(){ tryNext(); };
+        s.src = urls[j];
+        s.onload = function(){ testFn() ? resolve() : tryScriptTag(j+1); };
+        s.onerror = function(){ tryScriptTag(j+1); };
         document.head.appendChild(s);
       }
-      tryNext();
+      tryFetch();
     });
-    return fengariPromise;
   }
 
-  function fmtLua(v){
-    if(v === null || v === undefined) return String(v);
-    if(typeof v === 'object'){
-      try { return JSON.stringify(v); } catch(e){ return String(v); }
-    }
-    return String(v);
+  function loadLua(){
+    if(luaPromise) return luaPromise;
+    luaPromise = loadScriptFromUrls(
+      [FENGARI_LOCAL].concat(FENGARI_CDNS),
+      function(){ return !!(window.fengari && window.fengari.lua); }
+    ).then(function(){ return window.fengari; });
+    return luaPromise;
   }
 
+  function loadPyodide(){
+    if(pyodideInstance) return Promise.resolve(pyodideInstance);
+    if(pyodidePromise) return pyodidePromise;
+    pyodidePromise = loadScriptFromUrls(
+      [PYODIDE_CDN],
+      function(){ return !!window.loadPyodide; }
+    ).then(function(){
+      return window.loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/' });
+    }).then(function(py){
+      pyodideInstance = py;
+      return py;
+    });
+    return pyodidePromise;
+  }
+
+  /* ---- Lua ---- */
   function runLua(src){
-    return loadFengari().then(function(){
-      var F = window.fengari;
+    return loadLua().then(function(F){
       var lua = F.lua, lauxlib = F.lauxlib, lualib = F.lualib;
-      var to_luastring = F.to_luastring, to_jsstring = F.to_jsstring;
+      var to_ls = F.to_luastring, to_js = F.to_jsstring;
       var L = lauxlib.luaL_newstate();
       lualib.luaL_openlibs(L);
       var printFn = function(L){
         var n = lua.lua_gettop(L);
         var parts = [];
         for(var i=1; i<=n; i++){
-          if(lua.lua_isstring(L, i)) parts.push(to_jsstring(lua.lua_tostring(L, i)));
+          if(lua.lua_isstring(L, i)) parts.push(to_js(lua.lua_tostring(L, i)));
           else if(lua.lua_isnumber(L, i)) parts.push(String(lua.lua_tonumber(L, i)));
           else if(lua.lua_isboolean(L, i)) parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
           else if(lua.lua_isnil(L, i)) parts.push('nil');
@@ -940,16 +884,16 @@ function wireUI(){
         return 0;
       };
       (lua.lua_pushjsfunction || lua.lua_pushcfunction)(L, printFn);
-      lua.lua_setglobal(L, to_luastring('print'));
-      var status = lauxlib.luaL_loadstring(L, to_luastring(src));
+      lua.lua_setglobal(L, to_ls('print'));
+      var status = lauxlib.luaL_loadstring(L, to_ls(src));
       if(status !== lua.LUA_OK){
-        var msg = to_jsstring(lua.lua_tostring(L, -1));
+        var msg = to_js(lua.lua_tostring(L, -1));
         lua.lua_close(L);
         throw new Error(msg);
       }
       var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
       if(res !== lua.LUA_OK){
-        var msg2 = to_jsstring(lua.lua_tostring(L, -1));
+        var msg2 = to_js(lua.lua_tostring(L, -1));
         lua.lua_close(L);
         throw new Error(msg2);
       }
@@ -957,6 +901,16 @@ function wireUI(){
     });
   }
 
+  /* ---- Python (Pyodide) ---- */
+  function runPython(src){
+    return loadPyodide().then(function(py){
+      py.setStdout({ batched: function(s){ termWrite(s + '\n'); } });
+      py.setStderr({ batched: function(s){ termWrite(s + '\n', 'err'); } });
+      return py.runPythonAsync(src);
+    });
+  }
+
+  /* ---- JavaScript (sandboxed worker) ---- */
   function runJs(src){
     return new Promise(function(resolve){
       var workerSrc = [
@@ -999,30 +953,59 @@ function wireUI(){
     });
   }
 
+  /* ---- TypeScript (naive type strip then run as JS) ---- */
+  function runTs(src){
+    var stripped = src
+      .replace(/^\s*(?:export\s+|declare\s+)?interface\s+\w+[\s\S]*?\{[\s\S]*?\}\s*$/gm, '')
+      .replace(/^\s*type\s+\w+\s*=\s*[^;]+;?\s*$/gm, '')
+      .replace(/:\s*(?:string|number|boolean|any|void|unknown|never|null|undefined)(?:\s*[\[\]<>,\|\s\w]*)?(?=\s*[=,;)\]\}\n])/g, '')
+      .replace(/<([A-Z]\w*)>/g, '')
+      .replace(/\bas\s+[A-Z]\w*/g, '');
+    return runJs(stripped);
+  }
+
+  var RUNTIMES = {
+    lua:        { fn: runLua,    label: 'Lua 5.3 (fengari)' },
+    python:     { fn: runPython, label: 'Python 3.12 (Pyodide)' },
+    javascript: { fn: runJs,     label: 'JavaScript (sandboxed)' },
+    typescript: { fn: runTs,     label: 'TypeScript (stripped)' }
+  };
+
   function runActiveFile(){
-    if(!window.editor){ ncsToast('Editor not ready'); return; }
+    if(!window.editor){ toast2('Editor not ready'); return; }
     var f = null;
     try {
       if(session && session.activeId){
         f = workspace.files.find(function(x){ return x.id === session.activeId; });
       }
     } catch(e){}
-    if(!f){ ncsToast('No file open'); return; }
+    if(!f){ toast2('No file open'); return; }
+
     var lang = f.lang || 'plaintext';
+    if(lang === 'luau') lang = 'lua';
+    if(lang === 'mjs') lang = 'javascript';
+
+    var rt = RUNTIMES[lang];
     openTerminal();
     termWrite('> ' + f.name + '\n', 'cmd');
+
+    if(!rt){
+      termWrite('No runtime for "' + lang + '". Supported: .lua .luau .py .js .ts\n', 'err');
+      return;
+    }
+    if(lang === 'python'){
+      termWrite('(first run downloads Pyodide ~10MB, may take a moment)\n', 'info');
+    }
+
     var t0 = performance.now();
-    var p;
-    if(lang === 'lua') p = runLua(f.content);
-    else if(lang === 'javascript') p = runJs(f.content);
-    else { termWrite('No runtime for "' + lang + '". Supported: .lua and .js\n', 'err'); return; }
-    p.then(function(){
+    rt.fn(f.content).then(function(){
       termWrite('-- finished in ' + (performance.now() - t0).toFixed(1) + 'ms\n', 'info');
     }).catch(function(err){
       termWrite((err && err.message ? err.message : String(err)) + '\n', 'err');
     });
   }
 
+  /* ---- Run config modal ---- */
   function populateRunEntry(){
     var sel = el('runCfgEntry'); if(!sel) return;
     sel.innerHTML = '<option value="">(active file)</option>';
@@ -1092,17 +1075,17 @@ function wireUI(){
     saveConfigs();
     m.dataset.editing = cfg.id;
     renderRunList();
-    ncsToast('Saved');
+    toast2('Saved');
   }
   function deleteRunConfig(){
     var m = el('runConfigModal'); if(!m) return;
     var id = m.dataset.editing;
-    if(!id){ ncsToast('Nothing selected'); return; }
+    if(!id){ toast2('Nothing selected'); return; }
     configs = configs.filter(function(c){ return c.id !== id; });
     saveConfigs();
     delete m.dataset.editing;
     openRunConfig();
-    ncsToast('Deleted');
+    toast2('Deleted');
   }
 
   var btn;
@@ -1123,71 +1106,163 @@ function wireUI(){
   window.closeTerminal = closeTerminal;
 })();
 
+})();
 
-/* __NCS_NEWFILE_MODAL__ */
+/* ============ Floating selection popup (near text) ============ */
 (function(){
-  var LANG_EXT = {lua:'Lua',luau:'Lua (Luau)',js:'JavaScript',mjs:'JavaScript',ts:'TypeScript',py:'Python',html:'HTML',htm:'HTML',css:'CSS',json:'JSON',md:'Markdown',sh:'Shell',bash:'Shell',yml:'YAML',yaml:'YAML',xml:'XML',txt:'Plain Text'};
-  var LANG_CODE = {lua:'lua',luau:'lua',js:'javascript',mjs:'javascript',ts:'typescript',py:'python',html:'html',htm:'html',css:'css',json:'json',md:'markdown',sh:'shell',bash:'shell',yml:'yaml',yaml:'yaml',xml:'xml',txt:'plaintext'};
+  var popup = null;
+  var active = false;
 
   function el(id){ return document.getElementById(id); }
   function toast2(m){
     var t = el('toast'); if(!t) return;
     t.textContent = m; t.hidden = false;
-    t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
+    t.style.animation='none'; void t.offsetWidth; t.style.animation='';
     clearTimeout(toast2._t);
     toast2._t = setTimeout(function(){ t.hidden = true; }, 1600);
   }
 
-  function updateLangHint(){
-    var name = el('nfName').value || '';
-    var ext = name.indexOf('.') >= 0 ? name.split('.').pop().toLowerCase() : '';
-    el('nfLang').textContent = LANG_EXT[ext] || 'Plain Text';
-  }
-
-  function openModal(prefill){
-    var m = el('newFileModal'); if(!m) return;
-    el('nfName').value = prefill || 'untitled.lua';
-    updateLangHint();
-    m.hidden = false;
-    setTimeout(function(){
-      var i = el('nfName'); i.focus();
-      try{ i.setSelectionRange(0, i.value.lastIndexOf('.') > 0 ? i.value.lastIndexOf('.') : i.value.length); }catch(e){}
-    }, 60);
-  }
-  function closeModal(){ var m = el('newFileModal'); if(m) m.hidden = true; }
-
-  function createFile(){
-    var name = (el('nfName').value || '').trim();
-    if(!name){ toast2('Enter a file name'); return; }
-    try{
-      var id = 'f_' + Math.random().toString(36).slice(2, 10);
-      var ext = name.indexOf('.') >= 0 ? name.split('.').pop().toLowerCase() : '';
-      var lang = LANG_CODE[ext] || 'plaintext';
-      workspace.files.push({id:id, name:name, content:'', lang:lang});
-      if(typeof saveWorkspace === 'function') saveWorkspace();
-      if(typeof activate === 'function') activate(id);
-      closeModal();
-      toast2('Created ' + name);
-    } catch(err){
-      toast2('Error: ' + (err.message || err));
-    }
-  }
-
-  var nameInput = el('nfName');
-  if(nameInput){
-    nameInput.addEventListener('input', updateLangHint);
-    nameInput.addEventListener('keydown', function(e){
-      if(e.key === 'Enter'){ e.preventDefault(); createFile(); }
-      if(e.key === 'Escape'){ e.preventDefault(); closeModal(); }
+  function buildPopup(){
+    if(popup && document.body.contains(popup)) return popup;
+    popup = document.createElement('div');
+    popup.id = 'selPopup';
+    popup.className = 'sel-popup';
+    popup.hidden = true;
+    popup.innerHTML =
+      '<button class="sp-btn" data-act="cut">Cut</button>' +
+      '<button class="sp-btn" data-act="copy">Copy</button>' +
+      '<button class="sp-btn" data-act="paste">Paste</button>' +
+      '<button class="sp-btn" data-act="selectAll">All</button>';
+    popup.addEventListener('mousedown', function(e){ e.preventDefault(); });
+    popup.addEventListener('touchstart', function(e){ e.stopPropagation(); }, {passive:true});
+    popup.addEventListener('click', function(e){
+      var b = e.target.closest('.sp-btn');
+      if(!b) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var act = b.dataset.act;
+      if(act === 'copy') doCopy();
+      else if(act === 'cut') doCut();
+      else if(act === 'paste') doPaste();
+      else if(act === 'selectAll'){
+        var ed = window.editor;
+        if(ed){ var m = ed.getModel(); if(m) ed.setSelection(m.getFullModelRange()); }
+      }
     });
+    document.body.appendChild(popup);
+    return popup;
   }
-  var btn;
-  if((btn = el('closeNewFileModal')))  btn.addEventListener('click', closeModal);
-  if((btn = el('cancelNewFileModal'))) btn.addEventListener('click', closeModal);
-  if((btn = el('confirmNewFileModal'))) btn.addEventListener('click', createFile);
-  var m = el('newFileModal');
-  if(m) m.addEventListener('click', function(e){ if(e.target.id === 'newFileModal') closeModal(); });
 
-  /* Override the global newFile so every menu / palette entry uses the modal */
-  window.newFile = function(){ openModal(); };
+  function fallbackCopy(text){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.top='0'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand('copy'); toast2('Copied'); }
+    catch(e){ toast2('Copy failed'); }
+    document.body.removeChild(ta);
+  }
+  function doCopy(){
+    var ed = window.editor; if(!ed) return;
+    var sel = ed.getSelection(); var m = ed.getModel(); if(!m) return;
+    var text = m.getValueInRange(sel);
+    if(!text){ toast2('Nothing selected'); return; }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ toast2('Copied'); }, function(){ fallbackCopy(text); });
+    } else fallbackCopy(text);
+    hidePopup();
+  }
+  function doCut(){
+    var ed = window.editor; if(!ed) return;
+    var sel = ed.getSelection(); var m = ed.getModel(); if(!m) return;
+    var text = m.getValueInRange(sel);
+    if(!text){ toast2('Nothing selected'); return; }
+    var run = function(){ ed.executeEdits('cut', [{range:sel, text:''}]); ed.focus(); toast2('Cut'); hidePopup(); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(run, function(){ fallbackCopy(text); run(); });
+    } else { fallbackCopy(text); run(); }
+  }
+  function doPaste(){
+    var ed = window.editor; if(!ed) return;
+    if(!navigator.clipboard || !navigator.clipboard.readText){ toast2('Paste not supported'); return; }
+    navigator.clipboard.readText().then(function(text){
+      if(!text) return;
+      var sel = ed.getSelection();
+      ed.executeEdits('paste', [{range:sel, text:text}]);
+      ed.focus();
+      hidePopup();
+    }, function(){ toast2('Paste blocked'); });
+  }
+
+  function hidePopup(){
+    if(popup) popup.hidden = true;
+    active = false;
+  }
+
+  function showPopupAt(x, y){
+    var p = buildPopup();
+    p.hidden = false;
+    // measure then clamp inside viewport
+    var rect = p.getBoundingClientRect();
+    var pad = 8;
+    var left = x - rect.width / 2;
+    var top = y - rect.height - 12;
+    if(top < pad){ top = y + 22; } // if no space above, put below
+    if(left < pad) left = pad;
+    if(left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
+    if(top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
+    p.style.left = left + 'px';
+    p.style.top = top + 'px';
+    active = true;
+  }
+
+  function updateForSelection(){
+    var ed = window.editor;
+    if(!ed){ hidePopup(); return; }
+    var sel = ed.getSelection();
+    if(!sel || sel.isEmpty()){
+      if(active) hidePopup();
+      return;
+    }
+    // find where the selection is on screen
+    try {
+      var pos = ed.getScrolledVisiblePosition({ lineNumber: sel.startLineNumber, column: sel.startColumn });
+      if(!pos){ hidePopup(); return; }
+      var editorEl = document.getElementById('editor');
+      var er = editorEl.getBoundingClientRect();
+      var absX = er.left + pos.left + 20;
+      var absY = er.top + pos.top;
+      // if selection is off-screen, hide
+      if(absY < er.top - 10 || absY > er.bottom + 10){ hidePopup(); return; }
+      showPopupAt(absX, absY);
+    } catch(e){ hidePopup(); }
+  }
+
+  // Hide on tap outside the popup
+  document.addEventListener('touchstart', function(e){
+    if(popup && !popup.hidden && !e.target.closest('#selPopup') && !e.target.closest('.monaco-editor')){
+      hidePopup();
+    }
+  }, {passive:true, capture:true});
+  document.addEventListener('mousedown', function(e){
+    if(popup && !popup.hidden && !e.target.closest('#selPopup') && !e.target.closest('.monaco-editor')){
+      hidePopup();
+    }
+  }, true);
+
+  // Wire to editor after it exists
+  var tries = 0;
+  var wait = setInterval(function(){
+    tries++;
+    var ed = window.editor;
+    if(ed){
+      clearInterval(wait);
+      ed.onDidChangeCursorSelection(function(){ updateForSelection(); });
+      ed.onDidScrollChange(function(){ if(active) updateForSelection(); });
+      ed.onDidBlurEditorText(function(){ setTimeout(hidePopup, 120); });
+      return;
+    }
+    if(tries > 120) clearInterval(wait);
+  }, 150);
+
+  window.getPopup = buildPopup;
 })();
