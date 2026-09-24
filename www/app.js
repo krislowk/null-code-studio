@@ -834,40 +834,55 @@ function wireUI(){
     return loadLua().then(function(F){
       var lua = F.lua, lauxlib = F.lauxlib, lualib = F.lualib;
       var to_ls = F.to_luastring, to_js = F.to_jsstring;
+      var interop = F.interop;
+
+      if(!interop || typeof interop.push !== 'function'){
+        throw new Error('Fengari interop API unavailable');
+      }
+
       var L = lauxlib.luaL_newstate();
       lualib.luaL_openlibs(L);
-      var printFn = function(L){
+
+      interop.push(L, function(){
         var n = lua.lua_gettop(L);
         var parts = [];
-        for(var i=1; i<=n; i++){
-          if(lua.lua_isstring(L, i)) parts.push(to_js(lua.lua_tostring(L, i)));
-          else if(lua.lua_isnumber(L, i)) parts.push(String(lua.lua_tonumber(L, i)));
-          else if(lua.lua_isboolean(L, i)) parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
-          else if(lua.lua_isnil(L, i)) parts.push('nil');
-          else parts.push('<value>');
+        for(var i = 1; i <= n; i++){
+          if(lua.lua_isstring(L, i)){
+            parts.push(to_js(lua.lua_tostring(L, i)));
+          }else if(lua.lua_isnumber(L, i)){
+            parts.push(String(lua.lua_tonumber(L, i)));
+          }else if(lua.lua_isboolean(L, i)){
+            parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
+          }else if(lua.lua_isnil(L, i)){
+            parts.push('nil');
+          }else{
+            parts.push('<value>');
+          }
         }
         termWrite(parts.join('\t') + '\n');
         return 0;
-      };
-      (lua.lua_pushjsfunction || lua.lua_pushcfunction)(L, printFn);
+      });
+
       lua.lua_setglobal(L, to_ls('print'));
+
       var status = lauxlib.luaL_loadstring(L, to_ls(src));
       if(status !== lua.LUA_OK){
         var msg = to_js(lua.lua_tostring(L, -1));
         lua.lua_close(L);
         throw new Error(msg);
       }
+
       var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
       if(res !== lua.LUA_OK){
         var msg2 = to_js(lua.lua_tostring(L, -1));
         lua.lua_close(L);
         throw new Error(msg2);
       }
+
       lua.lua_close(L);
     });
   }
 
-  /* ---- Python (Pyodide) ---- */
   function runPython(src){
     return loadPyodide().then(function(py){
       py.setStdout({ batched: function(s){ termWrite(s + '\n'); } });
