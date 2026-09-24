@@ -67,7 +67,7 @@ require(['vs/editor/editor.main'],()=>{
     cursorBlinking:prefs.smoothCursor?'smooth':'blink',
     cursorSmoothCaretAnimation:'on',
     renderLineHighlight:prefs.highlightLine?'all':'none',
-    contextmenu:false,quickSuggestions:false,suggestOnTriggerCharacters:false,
+    contextmenu:true,quickSuggestions:false,suggestOnTriggerCharacters:false,
     padding:{top:12,bottom:12},lineNumbersMinChars:3,glyphMargin:false,folding:true,
     renderWhitespace:'selection',tabSize:prefs.tabSize,insertSpaces:prefs.insertSpaces,
     mouseWheelZoom:true,
@@ -90,43 +90,7 @@ require(['vs/editor/editor.main'],()=>{
   ed.addEventListener('touchstart',e=>{if(e.touches.length===2){lastY=(e.touches[0].clientY+e.touches[1].clientY)/2;lastTop=editor.getScrollTop();}},{passive:true});
   ed.addEventListener('touchmove',e=>{if(e.touches.length===2){const y=(e.touches[0].clientY+e.touches[1].clientY)/2;editor.setScrollTop(lastTop+(lastY-y)*2.2);e.preventDefault();}},{passive:false});
 
-  /* NCS_LONGPRESS: hold 450ms to select word under finger */
-  (function(){
-    var pressTimer=null, startX=0, startY=0, moved=false;
-    function clearPress(){ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }
-    function wordAt(x,y){
-      try{
-        if(!editor||!editor.getTargetAtClientPoint) return null;
-        var t=editor.getTargetAtClientPoint(x,y);
-        if(!t||!t.position) return null;
-        var m=editor.getModel(); if(!m) return null;
-        var w=m.getWordAtPosition(t.position);
-        if(!w) return null;
-        return {line:t.position.lineNumber, start:w.startColumn, end:w.endColumn};
-      }catch(e){ return null; }
-    }
-    ed.addEventListener('touchstart',function(e){
-      if(e.touches.length!==1){ clearPress(); return; }
-      var t=e.touches[0]; startX=t.clientX; startY=t.clientY; moved=false;
-      clearPress();
-      pressTimer=setTimeout(function(){
-        if(moved) return;
-        var w=wordAt(startX,startY);
-        if(w){
-          editor.setSelection(new monaco.Range(w.line,w.start,w.line,w.end));
-          editor.focus();
-          if(navigator.vibrate) try{ navigator.vibrate(15); }catch(_e){}
-        }
-      },450);
-    },{passive:true});
-    ed.addEventListener('touchmove',function(e){
-      if(e.touches.length!==1) return;
-      var t=e.touches[0];
-      if(Math.abs(t.clientX-startX)>8||Math.abs(t.clientY-startY)>8){ moved=true; clearPress(); }
-    },{passive:true});
-    ed.addEventListener('touchend',clearPress,{passive:true});
-    ed.addEventListener('touchcancel',clearPress,{passive:true});
-  })();
+  
 
   boot();
 });
@@ -760,6 +724,8 @@ function wireUI(){
 
 
 
+})();
+
 /* ============ NCS Multi-Language Runtime ============ */
 (function(){
   var FENGARI_LOCAL = 'vendor/fengari-web.js';
@@ -1106,163 +1072,3 @@ function wireUI(){
   window.closeTerminal = closeTerminal;
 })();
 
-})();
-
-/* ============ Floating selection popup (near text) ============ */
-(function(){
-  var popup = null;
-  var active = false;
-
-  function el(id){ return document.getElementById(id); }
-  function toast2(m){
-    var t = el('toast'); if(!t) return;
-    t.textContent = m; t.hidden = false;
-    t.style.animation='none'; void t.offsetWidth; t.style.animation='';
-    clearTimeout(toast2._t);
-    toast2._t = setTimeout(function(){ t.hidden = true; }, 1600);
-  }
-
-  function buildPopup(){
-    if(popup && document.body.contains(popup)) return popup;
-    popup = document.createElement('div');
-    popup.id = 'selPopup';
-    popup.className = 'sel-popup';
-    popup.hidden = true;
-    popup.innerHTML =
-      '<button class="sp-btn" data-act="cut">Cut</button>' +
-      '<button class="sp-btn" data-act="copy">Copy</button>' +
-      '<button class="sp-btn" data-act="paste">Paste</button>' +
-      '<button class="sp-btn" data-act="selectAll">All</button>';
-    popup.addEventListener('mousedown', function(e){ e.preventDefault(); });
-    popup.addEventListener('touchstart', function(e){ e.stopPropagation(); }, {passive:true});
-    popup.addEventListener('click', function(e){
-      var b = e.target.closest('.sp-btn');
-      if(!b) return;
-      e.preventDefault();
-      e.stopPropagation();
-      var act = b.dataset.act;
-      if(act === 'copy') doCopy();
-      else if(act === 'cut') doCut();
-      else if(act === 'paste') doPaste();
-      else if(act === 'selectAll'){
-        var ed = window.editor;
-        if(ed){ var m = ed.getModel(); if(m) ed.setSelection(m.getFullModelRange()); }
-      }
-    });
-    document.body.appendChild(popup);
-    return popup;
-  }
-
-  function fallbackCopy(text){
-    var ta = document.createElement('textarea');
-    ta.value = text; ta.style.position='fixed'; ta.style.top='0'; ta.style.opacity='0';
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    try { document.execCommand('copy'); toast2('Copied'); }
-    catch(e){ toast2('Copy failed'); }
-    document.body.removeChild(ta);
-  }
-  function doCopy(){
-    var ed = window.editor; if(!ed) return;
-    var sel = ed.getSelection(); var m = ed.getModel(); if(!m) return;
-    var text = m.getValueInRange(sel);
-    if(!text){ toast2('Nothing selected'); return; }
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(function(){ toast2('Copied'); }, function(){ fallbackCopy(text); });
-    } else fallbackCopy(text);
-    hidePopup();
-  }
-  function doCut(){
-    var ed = window.editor; if(!ed) return;
-    var sel = ed.getSelection(); var m = ed.getModel(); if(!m) return;
-    var text = m.getValueInRange(sel);
-    if(!text){ toast2('Nothing selected'); return; }
-    var run = function(){ ed.executeEdits('cut', [{range:sel, text:''}]); ed.focus(); toast2('Cut'); hidePopup(); };
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(run, function(){ fallbackCopy(text); run(); });
-    } else { fallbackCopy(text); run(); }
-  }
-  function doPaste(){
-    var ed = window.editor; if(!ed) return;
-    if(!navigator.clipboard || !navigator.clipboard.readText){ toast2('Paste not supported'); return; }
-    navigator.clipboard.readText().then(function(text){
-      if(!text) return;
-      var sel = ed.getSelection();
-      ed.executeEdits('paste', [{range:sel, text:text}]);
-      ed.focus();
-      hidePopup();
-    }, function(){ toast2('Paste blocked'); });
-  }
-
-  function hidePopup(){
-    if(popup) popup.hidden = true;
-    active = false;
-  }
-
-  function showPopupAt(x, y){
-    var p = buildPopup();
-    p.hidden = false;
-    // measure then clamp inside viewport
-    var rect = p.getBoundingClientRect();
-    var pad = 8;
-    var left = x - rect.width / 2;
-    var top = y - rect.height - 12;
-    if(top < pad){ top = y + 22; } // if no space above, put below
-    if(left < pad) left = pad;
-    if(left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
-    if(top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
-    p.style.left = left + 'px';
-    p.style.top = top + 'px';
-    active = true;
-  }
-
-  function updateForSelection(){
-    var ed = window.editor;
-    if(!ed){ hidePopup(); return; }
-    var sel = ed.getSelection();
-    if(!sel || sel.isEmpty()){
-      if(active) hidePopup();
-      return;
-    }
-    // find where the selection is on screen
-    try {
-      var pos = ed.getScrolledVisiblePosition({ lineNumber: sel.startLineNumber, column: sel.startColumn });
-      if(!pos){ hidePopup(); return; }
-      var editorEl = document.getElementById('editor');
-      var er = editorEl.getBoundingClientRect();
-      var absX = er.left + pos.left + 20;
-      var absY = er.top + pos.top;
-      // if selection is off-screen, hide
-      if(absY < er.top - 10 || absY > er.bottom + 10){ hidePopup(); return; }
-      showPopupAt(absX, absY);
-    } catch(e){ hidePopup(); }
-  }
-
-  // Hide on tap outside the popup
-  document.addEventListener('touchstart', function(e){
-    if(popup && !popup.hidden && !e.target.closest('#selPopup') && !e.target.closest('.monaco-editor')){
-      hidePopup();
-    }
-  }, {passive:true, capture:true});
-  document.addEventListener('mousedown', function(e){
-    if(popup && !popup.hidden && !e.target.closest('#selPopup') && !e.target.closest('.monaco-editor')){
-      hidePopup();
-    }
-  }, true);
-
-  // Wire to editor after it exists
-  var tries = 0;
-  var wait = setInterval(function(){
-    tries++;
-    var ed = window.editor;
-    if(ed){
-      clearInterval(wait);
-      ed.onDidChangeCursorSelection(function(){ updateForSelection(); });
-      ed.onDidScrollChange(function(){ if(active) updateForSelection(); });
-      ed.onDidBlurEditorText(function(){ setTimeout(hidePopup, 120); });
-      return;
-    }
-    if(tries > 120) clearInterval(wait);
-  }, 150);
-
-  window.getPopup = buildPopup;
-})();
