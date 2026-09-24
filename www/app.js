@@ -184,10 +184,26 @@ function showWelcome(v){$('#welcome').classList.toggle('hidden',!v);if(v)renderR
 function prettyLang(l){const m={javascript:'JavaScript',typescript:'TypeScript',lua:'Lua',python:'Python',html:'HTML',css:'CSS',json:'JSON',markdown:'Markdown',cpp:'C++',c:'C',java:'Java',rust:'Rust',go:'Go',shell:'Shell',yaml:'YAML',xml:'XML',plaintext:'Plain Text'};return m[l]||l;}
 
 function newFile(){
-  const n=prompt('File name','script.lua');if(!n)return;
-  const f={id:uid(),name:n,content:'',lang:langFromName(n)};
-  workspace.files.push(f);saveWorkspace();activate(f.id);
-  if(innerWidth<760)closeSidebar();toast('Created '+n);
+  const modal=$('#newFileModal');
+  const input=$('#nfName');
+  const lang=$('#nfLang');
+  if(!modal||!input){
+    const n=prompt('File name','script.lua');
+    if(!n)return;
+    const f={id:uid(),name:n,content:'',lang:langFromName(n)};
+    workspace.files.push(f);saveWorkspace();activate(f.id);
+    if(innerWidth<760)closeSidebar();toast('Created '+n);
+    return;
+  }
+
+  input.value='script.lua';
+  if(lang)lang.textContent=prettyLang(langFromName(input.value));
+  modal.hidden=false;
+
+  setTimeout(function(){
+    input.focus();
+    input.select();
+  },50);
 }
 function deleteFile(id){
   if(!confirm('Delete this file?'))return;
@@ -505,6 +521,71 @@ function wireUI(){
   $('#toggleSidebar').addEventListener('click',toggleSidebar);
   $('#scrim').addEventListener('click',closeSidebar);
   $('#newFileBtn').addEventListener('click',newFile);
+
+  function closeNewFileModal(){
+    var m=$('#newFileModal');
+    if(m)m.hidden=true;
+  }
+
+  function createNewFileFromModal(){
+    var input=$('#nfName');
+    if(!input)return;
+
+    var n=input.value.trim();
+    if(!n){
+      toast('Enter a file name');
+      input.focus();
+      return;
+    }
+
+    if(/[\\\\/:*?"<>|]/.test(n)){
+      toast('Invalid file name');
+      input.focus();
+      return;
+    }
+
+    var exists=workspace.files.some(function(f){
+      return f.name.toLowerCase()===n.toLowerCase();
+    });
+
+    if(exists){
+      toast('File already exists');
+      input.focus();
+      return;
+    }
+
+    var f={id:uid(),name:n,content:'',lang:langFromName(n)};
+    workspace.files.push(f);
+    saveWorkspace();
+    closeNewFileModal();
+    activate(f.id);
+    if(innerWidth<760)closeSidebar();
+    toast('Created '+n);
+  }
+
+  $('#closeNewFileModal').addEventListener('click',closeNewFileModal);
+  $('#cancelNewFileModal').addEventListener('click',closeNewFileModal);
+  $('#confirmNewFileModal').addEventListener('click',createNewFileFromModal);
+
+  $('#newFileModal').addEventListener('click',function(e){
+    if(e.target.id==='newFileModal')closeNewFileModal();
+  });
+
+  $('#nfName').addEventListener('input',function(){
+    var n=this.value.trim();
+    var l=$('#nfLang');
+    if(l)l.textContent=n?prettyLang(langFromName(n)):'Plain Text';
+  });
+
+  $('#nfName').addEventListener('keydown',function(e){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      createNewFileFromModal();
+    }else if(e.key==='Escape'){
+      e.preventDefault();
+      closeNewFileModal();
+    }
+  });
   $('#importBtn').addEventListener('click',()=>$('#fileInput').click());
   $('#exportBtn').addEventListener('click',exportToDocuments);
   $('#saveBtn').addEventListener('click',saveCurrent);
@@ -807,10 +888,35 @@ function wireUI(){
 
   function loadLua(){
     if(luaPromise) return luaPromise;
+
+    if(window.fengari && window.fengari.lua){
+      luaPromise = Promise.resolve(window.fengari);
+      return luaPromise;
+    }
+
     luaPromise = loadScriptFromUrls(
       [FENGARI_LOCAL].concat(FENGARI_CDNS),
-      function(){ return !!(window.fengari && window.fengari.lua); }
-    ).then(function(){ return window.fengari; });
+      function(){
+        return !!(window.fengari && window.fengari.lua);
+      }
+    ).then(function(){
+      if(!window.fengari || !window.fengari.lua){
+        throw new Error(
+          'Fengari loaded but global API is missing. globals: ' +
+          Object.keys(window).filter(function(k){
+            return /fengari|lua/i.test(k);
+          }).join(', ')
+        );
+      }
+      return window.fengari;
+    }).catch(function(err){
+      luaPromise = null;
+      throw new Error(
+        'Lua runtime failed: ' +
+        (err && err.message ? err.message : String(err))
+      );
+    });
+
     return luaPromise;
   }
 
