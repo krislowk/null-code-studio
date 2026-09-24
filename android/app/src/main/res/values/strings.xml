@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Null Code Studio</string>
+    <string name="title_activity_main">Null Code Studio</string>
+    <string name="package_name">com.nullfuscator.codestudio</string>
+    <string name="custom_url_scheme">com.nullfuscator.codestudio</string>
+</resources>

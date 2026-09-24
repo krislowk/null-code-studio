@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1e1e1e">
+<title>Null Code Studio</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/editor/editor.main.min.css">
+</head>
+<body>
+<div id="app">
+  <header class="titlebar">
+    <button class="tb-btn" id="openSidebar">☰</button>
+    <div class="tb-title">
+      <span id="tbFile">Untitled.lua</span>
+      <span class="tb-dirty" id="tbDirty" hidden>●</span>
+    </div>
+    <button class="tb-btn" id="openPalette">⌘</button>
+    <button class="tb-btn" id="saveFile">💾</button>
+  </header>
+  <div class="tabs" id="tabs"></div>
+  <div class="editor-wrap">
+    <div id="editor"></div>
+    <div class="welcome" id="welcome">
+      <div class="welcome-inner">
+        <h1>Null Code Studio</h1>
+        <p>A lightweight code editor for Android.</p>
+        <div class="welcome-actions">
+          <button class="w-btn primary" data-action="new">New File</button>
+          <button class="w-btn" data-action="open">Open File</button>
+          <button class="w-btn" data-action="files">Show Files</button>
+        </div>
+        <div class="shortcuts">
+          <div><kbd>⌘</kbd> Command palette</div>
+          <div><kbd>☰</kbd> File explorer</div>
+          <div><kbd>💾</kbd> Save</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer class="statusbar">
+    <div class="sb-left">
+      <span id="sbLang" class="sb-item">Lua</span>
+      <span id="sbPos" class="sb-item">Ln 1, Col 1</span>
+    </div>
+    <div class="sb-right">
+      <span id="sbEnc" class="sb-item">UTF-8</span>
+      <span id="sbEol" class="sb-item">LF</span>
+    </div>
+  </footer>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <span class="sidebar-title">Explorer</span>
+      <div class="sidebar-actions">
+        <button class="sb-icon" id="newFileBtn">＋</button>
+        <button class="sb-icon" id="importBtn">↧</button>
+        <button class="sb-icon" id="closeSidebar">✕</button>
+      </div>
+    </div>
+    <div class="file-tree" id="fileTree"></div>
+    <div class="sidebar-foot">
+      <button class="sb-foot-btn" id="exportBtn">Export to Documents</button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="palette" id="palette" hidden>
+    <div class="palette-box">
+      <input type="text" id="paletteInput" placeholder="Type a command…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <div class="palette-list" id="paletteList"></div>
+    </div>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+  <input type="file" id="fileInput" hidden accept=".lua,.luau,.js,.ts,.py,.html,.css,.json,.md,.txt,.cpp,.c,.h,.java,.rs,.go,.sh,.yml,.yaml">
+</div>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
