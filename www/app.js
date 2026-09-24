@@ -613,9 +613,9 @@ function wireUI(){
       {label:'Decrease Font Size', action:'__fontDown'}
     ],
     run: [
-      {label:'Run Active File', key:'F5', action:'__runUnavailable'},
+      {label:'Run Active File', key:'F5', action:'__run'},
       {sep:true},
-      {label:'Configure Run', action:'__runUnavailable'}
+      {label:'Configure Run', action:'__runConfig'}
     ]
   };
 
@@ -668,7 +668,8 @@ function wireUI(){
       if(name === '__minimap'){ if(typeof updatePref==='function' && typeof prefs!=='undefined') updatePref('minimap', !prefs.minimap); return; }
       if(name === '__fontUp'){ if(typeof updatePref==='function' && typeof prefs!=='undefined') updatePref('fontSize', Math.min(28, prefs.fontSize+1)); return; }
       if(name === '__fontDown'){ if(typeof updatePref==='function' && typeof prefs!=='undefined') updatePref('fontSize', Math.max(10, prefs.fontSize-1)); return; }
-      if(name === '__runUnavailable'){ toast2('Runtime not installed yet'); return; }
+      if(name === '__run'){ if(window.runActiveFile) window.runActiveFile(); return; }
+      if(name === '__runConfig'){ if(window.openRunConfig) window.openRunConfig(); return; }
       var fn = window[name];
       if(typeof fn === 'function') fn();
       else toast2('Not available: ' + name);
@@ -808,4 +809,280 @@ function wireUI(){
     }
     if(tries > 100) clearInterval(wait);
   }, 150);
+})();
+
+/* ============ NCS Run System ============ */
+(function(){
+  var FENGARI_URL = 'https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js';
+  var RUN_KEY = 'ncs.runconfigs.v1';
+  var fengariPromise = null;
+  var configs = [];
+  try { configs = JSON.parse(localStorage.getItem(RUN_KEY) || '[]'); } catch(e){}
+
+  function el(id){ return document.getElementById(id); }
+  function saveConfigs(){ try { localStorage.setItem(RUN_KEY, JSON.stringify(configs)); } catch(e){} }
+  function ncsToast(msg){
+    var t = el('toast'); if(!t) return;
+    t.textContent = msg; t.hidden = false;
+    t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
+    clearTimeout(ncsToast._t);
+    ncsToast._t = setTimeout(function(){ t.hidden = true; }, 1600);
+  }
+
+  /* ---- Terminal ---- */
+  function openTerminal(){
+    var t = el('terminal'); if(!t) return;
+    t.hidden = false;
+    var ed = el('editor');
+    if(ed) ed.style.paddingBottom = '38vh';
+  }
+  function closeTerminal(){
+    var t = el('terminal'); if(!t) return;
+    t.hidden = true;
+    var ed = el('editor');
+    if(ed) ed.style.paddingBottom = '';
+  }
+  function termWrite(text, cls){
+    var b = el('terminalBody'); if(!b) return;
+    var span = document.createElement('span');
+    span.className = 't-line-' + (cls || 'out');
+    span.textContent = text;
+    b.appendChild(span);
+    b.scrollTop = b.scrollHeight;
+  }
+  function termClear(){
+    var b = el('terminalBody');
+    if(b) b.innerHTML = '';
+  }
+
+  /* ---- Lua via fengari ---- */
+  function loadFengari(){
+    if(window.fengari) return Promise.resolve();
+    if(fengariPromise) return fengariPromise;
+    fengariPromise = new Promise(function(resolve, reject){
+      var s = document.createElement('script');
+      s.src = FENGARI_URL;
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ reject(new Error('Failed to load Lua runtime from CDN')); };
+      document.head.appendChild(s);
+    });
+    return fengariPromise;
+  }
+  function runLua(src){
+    return loadFengari().then(function(){
+      var F = window.fengari;
+      var lua = F.lua, lauxlib = F.lauxlib, lualib = F.lualib;
+      var to_luastring = F.to_luastring, to_jsstring = F.to_jsstring;
+
+      var L = lauxlib.luaL_newstate();
+      lualib.luaL_openlibs(L);
+
+      var printFn = function(L){
+        var n = lua.lua_gettop(L);
+        var parts = [];
+        for(var i=1; i<=n; i++){
+          if(lua.lua_isstring(L, i)) parts.push(to_jsstring(lua.lua_tostring(L, i)));
+          else if(lua.lua_isnumber(L, i)) parts.push(String(lua.lua_tonumber(L, i)));
+          else if(lua.lua_isboolean(L, i)) parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
+          else if(lua.lua_isnil(L, i)) parts.push('nil');
+          else parts.push('<' + lua.lua_typename(L, lua.lua_type(L, i)) + '>');
+        }
+        termWrite(parts.join('\t') + '\n');
+        return 0;
+      };
+      var push = lua.lua_pushjsfunction || lua.lua_pushcfunction;
+      push(L, printFn);
+      lua.lua_setglobal(L, to_luastring('print'));
+
+      var status = lauxlib.luaL_loadstring(L, to_luastring(src));
+      if(status !== lua.LUA_OK){
+        var msg = to_jsstring(lua.lua_tostring(L, -1));
+        lua.lua_close(L);
+        throw new Error(msg);
+      }
+      var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
+      if(res !== lua.LUA_OK){
+        var msg2 = to_jsstring(lua.lua_tostring(L, -1));
+        lua.lua_close(L);
+        throw new Error(msg2);
+      }
+      lua.lua_close(L);
+    });
+  }
+
+  /* ---- JavaScript via Worker ---- */
+  function runJs(src){
+    return new Promise(function(resolve){
+      var workerSrc = [
+        'self.console = {',
+        '  log:   function(){ send("out", arguments); },',
+        '  info:  function(){ send("out", arguments); },',
+        '  warn:  function(){ send("err", arguments); },',
+        '  error: function(){ send("err", arguments); }',
+        '};',
+        'function fmt(x){',
+        '  try { return typeof x === "object" ? JSON.stringify(x) : String(x); }',
+        '  catch(e){ return String(x); }',
+        '}',
+        'function send(kind, args){',
+        '  var arr = Array.prototype.slice.call(args).map(fmt);',
+        '  self.postMessage({ t: kind, m: arr.join(" ") + "\\n" });',
+        '}',
+        'self.onmessage = function(e){',
+        '  try { (new Function(e.data))(); self.postMessage({ t: "done" }); }',
+        '  catch(err){ send("err", [err && err.message ? err.message : String(err)]); self.postMessage({ t: "done" }); }',
+        '};'
+      ].join('\n');
+      var blob = new Blob([workerSrc], { type: 'application/javascript' });
+      var url = URL.createObjectURL(blob);
+      var w = new Worker(url);
+      var done = false;
+      function finish(){
+        if(done) return; done = true;
+        try { w.terminate(); } catch(e){}
+        URL.revokeObjectURL(url);
+        resolve();
+      }
+      w.onmessage = function(e){
+        if(e.data.t === 'done'){ finish(); return; }
+        termWrite(e.data.m, e.data.t);
+      };
+      w.onerror = function(e){
+        termWrite('Worker error: ' + (e.message || 'unknown') + '\n', 'err');
+        finish();
+      };
+      w.postMessage(src);
+      setTimeout(finish, 30000);
+    });
+  }
+
+  /* ---- Main run ---- */
+  function runActiveFile(){
+    if(!window.editor){ ncsToast('Editor not ready'); return; }
+    var f = null;
+    try {
+      if(session && session.activeId){
+        f = workspace.files.find(function(x){ return x.id === session.activeId; });
+      }
+    } catch(e){}
+    if(!f){ ncsToast('No file open'); return; }
+    var lang = f.lang || 'plaintext';
+    openTerminal();
+    termWrite('> ' + f.name + '\n', 'cmd');
+    var t0 = performance.now();
+    var p;
+    if(lang === 'lua') p = runLua(f.content);
+    else if(lang === 'javascript') p = runJs(f.content);
+    else { termWrite('No runtime for "' + lang + '". Supported: .lua and .js\n', 'err'); return; }
+    p.then(function(){
+      termWrite('-- finished in ' + (performance.now() - t0).toFixed(1) + 'ms\n', 'info');
+    }).catch(function(err){
+      termWrite((err && err.message ? err.message : String(err)) + '\n', 'err');
+    });
+  }
+
+  /* ---- Run config modal ---- */
+  function populateRunEntry(){
+    var sel = el('runCfgEntry'); if(!sel) return;
+    sel.innerHTML = '<option value="">(active file)</option>';
+    try {
+      if(workspace){
+        workspace.files.forEach(function(f){
+          var o = document.createElement('option');
+          o.value = f.id; o.textContent = f.name;
+          sel.appendChild(o);
+        });
+      }
+    } catch(e){}
+  }
+  function renderRunList(){
+    var list = el('runList'); if(!list) return;
+    list.innerHTML = '';
+    var m = el('runConfigModal');
+    configs.forEach(function(c){
+      var item = document.createElement('div');
+      item.className = 'run-list-item' + ((m && m.dataset.editing === c.id) ? ' active' : '');
+      var nm = document.createElement('span');
+      nm.className = 'run-cfg-name';
+      nm.textContent = c.name || 'Untitled';
+      var tag = document.createElement('span');
+      tag.className = 'run-cfg-tag';
+      tag.textContent = (c.runtime || 'lua').toUpperCase();
+      item.appendChild(nm); item.appendChild(tag);
+      item.addEventListener('click', function(){
+        el('runCfgName').value = c.name || '';
+        el('runCfgRuntime').value = c.runtime || 'lua';
+        el('runCfgEntry').value = c.entry || '';
+        el('runCfgArgs').value = c.args || '';
+        m.dataset.editing = c.id;
+        renderRunList();
+      });
+      list.appendChild(item);
+    });
+  }
+  function openRunConfig(){
+    var m = el('runConfigModal'); if(!m) return;
+    populateRunEntry();
+    renderRunList();
+    var first = configs[0];
+    if(first){
+      el('runCfgName').value = first.name || '';
+      el('runCfgRuntime').value = first.runtime || 'lua';
+      el('runCfgEntry').value = first.entry || '';
+      el('runCfgArgs').value = first.args || '';
+      m.dataset.editing = first.id;
+    } else {
+      el('runCfgName').value = 'Run active file';
+      el('runCfgRuntime').value = 'lua';
+      el('runCfgEntry').value = '';
+      el('runCfgArgs').value = '';
+      delete m.dataset.editing;
+    }
+    m.hidden = false;
+  }
+  function saveRunConfig(){
+    var m = el('runConfigModal'); if(!m) return;
+    var cfg = {
+      id: m.dataset.editing || ('rc_' + Math.random().toString(36).slice(2, 10)),
+      name: (el('runCfgName').value || '').trim() || 'Untitled',
+      runtime: el('runCfgRuntime').value || 'lua',
+      entry: el('runCfgEntry').value || null,
+      args: (el('runCfgArgs').value || '').trim()
+    };
+    var idx = -1;
+    for(var i=0;i<configs.length;i++){ if(configs[i].id === cfg.id){ idx = i; break; } }
+    if(idx >= 0) configs[idx] = cfg; else configs.push(cfg);
+    saveConfigs();
+    m.dataset.editing = cfg.id;
+    renderRunList();
+    ncsToast('Saved');
+  }
+  function deleteRunConfig(){
+    var m = el('runConfigModal'); if(!m) return;
+    var id = m.dataset.editing;
+    if(!id){ ncsToast('Nothing selected'); return; }
+    configs = configs.filter(function(c){ return c.id !== id; });
+    saveConfigs();
+    delete m.dataset.editing;
+    openRunConfig();
+    ncsToast('Deleted');
+  }
+
+  /* ---- Wire controls ---- */
+  var btn;
+  if((btn = el('clearTerm')))     btn.addEventListener('click', termClear);
+  if((btn = el('closeTerm')))     btn.addEventListener('click', closeTerminal);
+  if((btn = el('closeRunConfig'))) btn.addEventListener('click', function(){ el('runConfigModal').hidden = true; });
+  if((btn = el('saveRunConfig')))  btn.addEventListener('click', saveRunConfig);
+  if((btn = el('deleteRunCfg')))   btn.addEventListener('click', deleteRunConfig);
+  var rm = el('runConfigModal');
+  if(rm) rm.addEventListener('click', function(e){ if(e.target.id === 'runConfigModal') rm.hidden = true; });
+
+  window.addEventListener('keydown', function(e){
+    if(e.key === 'F5'){ e.preventDefault(); runActiveFile(); }
+  });
+
+  window.runActiveFile = runActiveFile;
+  window.openRunConfig = openRunConfig;
+  window.closeTerminal = closeTerminal;
 })();
