@@ -261,3 +261,11 @@ button{font-family:inherit}
 .modal-foot.row{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border)}
 .modal-foot.row .ghost-btn{flex:1;padding:11px}
 .modal-foot.row .modal-done{flex:2;padding:11px}
+
+/* ========= Selection bar ========= */
+.sel-bar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:#1a1a1a;border:1px solid #3a3a3a;border-radius:10px;padding:4px;display:flex;gap:2px;box-shadow:0 10px 30px rgba(0,0,0,.75);z-index:16;animation:selPop .14s cubic-bezier(.2,.7,.2,1)}
+.sel-bar[hidden]{display:none !important}
+@keyframes selPop{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+.sel-btn{background:transparent;border:none;color:#d4d4d4;font-family:inherit;font-size:12px;padding:9px 15px;border-radius:7px;cursor:pointer;transition:background .12s;white-space:nowrap;font-weight:500;letter-spacing:.02em}
+.sel-btn:active{background:#2a2a2a;color:#fff}
+.sel-close{color:#8a8a8a;padding:9px 12px;font-size:13px}
