@@ -196,3 +196,10 @@ button{font-family:inherit}
 .monaco-editor .margin{background:var(--bg) !important}
 .monaco-editor .monaco-scrollable-element>.scrollbar>.slider{background:rgba(121,121,121,.35) !important;border-radius:5px}
 .monaco-editor .monaco-scrollable-element>.scrollbar>.slider:hover{background:rgba(121,121,121,.6) !important}
+
+/* Modal fixes */
+.modal[hidden]{display:none !important}
+.modal-head .mini-btn{width:40px;height:40px;font-size:18px}
+.modal-foot{padding:12px 14px;border-top:1px solid #3e3e42;flex-shrink:0}
+.modal-done{width:100%;background:var(--accent);border:none;color:#fff;padding:13px;border-radius:4px;font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s}
+.modal-done:active{background:var(--accent-soft)}

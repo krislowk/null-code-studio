@@ -404,6 +404,7 @@ function wireUI(){
   $('#cmdBtn').addEventListener('click',openPalette);
   $('#moreBtn').addEventListener('click',()=>{$('#shortcutsModal').hidden=false;});
   $('#closeShortcuts').addEventListener('click',()=>{$('#shortcutsModal').hidden=true;});
+  $('#doneShortcuts').addEventListener('click',()=>{$('#shortcutsModal').hidden=true;});
   $('#shortcutsModal').addEventListener('click',e=>{if(e.target.id==='shortcutsModal')$('#shortcutsModal').hidden=true;});
 
   $$('.activity-item').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
