@@ -1,4 +1,4 @@
-package com.nullfuscator.codestudio;
+package com.ncs.app;
 
 import com.getcapacitor.BridgeActivity;
 

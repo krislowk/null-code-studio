@@ -492,3 +492,275 @@ function wireUI(){
     else if(k==='p'){e.preventDefault();openPalette();}
   });
 }
+
+
+/* ============ RUN SYSTEM ============ */
+/* __RUN_SYSTEM__ */
+(function(){
+  const RUN_KEY='ncs.runcfg.v1';
+  const FENGARI_CDN='https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js';
+  const $s=s=>document.querySelector(s);
+  const uidRun=()=>'rc_'+Math.random().toString(36).slice(2,10);
+
+  let runConfigs=[];
+  try{runConfigs=JSON.parse(localStorage.getItem(RUN_KEY)||'[]');}catch{}
+  const saveRun=()=>{try{localStorage.setItem(RUN_KEY,JSON.stringify(runConfigs));}catch{}};
+  let fengariLoading=null;
+
+  function loadFengari(){
+    if(window.fengari)return Promise.resolve();
+    if(fengariLoading)return fengariLoading;
+    fengariLoading=new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src=FENGARI_CDN;
+      s.onload=()=>res();
+      s.onerror=()=>rej(new Error('fengari failed to load'));
+      document.head.appendChild(s);
+    });
+    return fengariLoading;
+  }
+
+  function openTerm(){
+    const t=$s('#terminal');if(!t)return;
+    t.hidden=false;
+    $s('#editor').style.paddingBottom='38vh';
+  }
+  function closeTerm(){
+    const t=$s('#terminal');if(!t)return;
+    t.hidden=true;
+    $s('#editor').style.paddingBottom='';
+  }
+  function termWrite(text,cls){
+    const b=$s('#terminalBody');if(!b)return;
+    const sp=document.createElement('span');
+    sp.className='t-line-'+(cls||'out');
+    sp.textContent=text;
+    b.appendChild(sp);
+    b.scrollTop=b.scrollHeight;
+  }
+  function termClear(){const b=$s('#terminalBody');if(b)b.innerHTML='';}
+
+  async function runLua(src){
+    await loadFengari();
+    const fg=window.fengari;
+    const lua=fg.lua,lauxlib=fg.lauxlib,lualib=fg.lualib;
+    const L=lauxlib.luaL_newstate();
+    lualib.luaL_openlibs(L);
+
+    const printFn=function(L){
+      const n=lua.lua_gettop(L);
+      const parts=[];
+      for(let i=1;i<=n;i++){
+        if(lua.lua_isstring(L,i))parts.push(fg.to_jsstring(lua.lua_tostring(L,i)));
+        else if(lua.lua_isnumber(L,i))parts.push(String(lua.lua_tonumber(L,i)));
+        else if(lua.lua_isboolean(L,i))parts.push(lua.lua_toboolean(L,i)?'true':'false');
+        else if(lua.lua_isnil(L,i))parts.push('nil');
+        else parts.push('?');
+      }
+      termWrite(parts.join('	')+'
+');
+      return 0;
+    };
+    (lua.lua_pushjsfunction||lua.lua_pushcfunction)(L,printFn);
+    lua.lua_setglobal(L,fg.to_luastring('print'));
+
+    // tostring override so string() concat works
+    const tstrFn=function(L){
+      const n=lua.lua_gettop(L);
+      const v=lua.lua_toboolean(L,n);
+      lua.lua_pushstring(L,fg.to_luastring(String(v)));
+      return 1;
+    };
+
+    const status=lauxlib.luaL_loadstring(L,fg.to_luastring(src));
+    if(status!==lua.LUA_OK){
+      const msg=fg.to_jsstring(lua.lua_tostring(L,-1));
+      lua.lua_close(L);
+      throw new Error(msg);
+    }
+    const res=lua.lua_pcall(L,0,lua.LUA_MULTRET,0);
+    if(res!==lua.LUA_OK){
+      const msg=fg.to_jsstring(lua.lua_tostring(L,-1));
+      lua.lua_close(L);
+      throw new Error(msg);
+    }
+    lua.lua_close(L);
+  }
+
+  function runJavaScript(src){
+    return new Promise(resolve=>{
+      const code=[
+        'self.console={',
+        '  log:function(){self.postMessage({t:"out",m:Array.prototype.slice.call(arguments).map(fmt).join(" ")+"\\n"});},',
+        '  error:function(){self.postMessage({t:"err",m:Array.prototype.slice.call(arguments).map(fmt).join(" ")+"\\n"});},',
+        '  warn:function(){self.postMessage({t:"err",m:Array.prototype.slice.call(arguments).map(fmt).join(" ")+"\\n"});},',
+        '  info:function(){self.postMessage({t:"out",m:Array.prototype.slice.call(arguments).map(fmt).join(" ")+"\\n"});}',
+        '};',
+        'function fmt(x){try{return typeof x==="object"?JSON.stringify(x):String(x);}catch(e){return String(x);}}',
+        'self.onmessage=function(e){',
+        '  try{(new Function(e.data))();self.postMessage({t:"done"});}',
+        '  catch(err){self.postMessage({t:"err",m:(err&&err.message?err.message:String(err))+"\\n"});self.postMessage({t:"done"});}',
+        '};'
+      ].join('
+');
+      const blob=new Blob([code],{type:'application/javascript'});
+      const url=URL.createObjectURL(blob);
+      const w=new Worker(url);
+      let done=false;
+      const finish=()=>{if(done)return;done=true;try{w.terminate();}catch{}URL.revokeObjectURL(url);resolve();};
+      w.onmessage=function(e){
+        if(e.data.t==='done'){finish();return;}
+        termWrite(e.data.m,e.data.t);
+      };
+      w.onerror=function(e){termWrite('Worker error: '+e.message+'
+','err');finish();};
+      w.postMessage(src);
+      setTimeout(finish,30000);
+    });
+  }
+
+  async function runActiveFile(){
+    if(!window.session||!session.activeId){toast('No file open');return;}
+    const f=workspace.files.find(x=>x.id===session.activeId);
+    if(!f){toast('No file open');return;}
+    const lang=f.lang||'plaintext';
+    const cfg=runConfigs.find(c=>c.entry===f.id)||runConfigs.find(c=>c.runtime===lang);
+
+    openTerm();
+    termWrite('> '+f.name+(cfg&&cfg.args?' '+cfg.args:'')+'
+','cmd');
+    const t0=performance.now();
+    try{
+      if(lang==='lua')await runLua(f.content);
+      else if(lang==='javascript')await runJavaScript(f.content);
+      else termWrite('No runtime configured for "'+lang+'". Tap Run → Configure Run…
+','err');
+    }catch(e){
+      termWrite((e&&e.message?e.message:String(e))+'
+','err');
+    }
+    termWrite('— finished in '+((performance.now()-t0)/1000).toFixed(3)+'s
+','info');
+  }
+
+  function populateRunEntry(){
+    const sel=$s('#runCfgEntry');if(!sel)return;
+    sel.innerHTML='<option value="">(active file)</option>';
+    for(const f of workspace.files){
+      const o=document.createElement('option');
+      o.value=f.id;o.textContent=f.name;
+      sel.appendChild(o);
+    }
+  }
+  function renderRunList(){
+    const el=$s('#runList');if(!el)return;
+    el.innerHTML='';
+    for(const c of runConfigs){
+      const item=document.createElement('div');
+      item.className='run-list-item'+(($s('#runConfigModal').dataset.editing===c.id)?' active':'');
+      item.innerHTML='<span class="run-cfg-name">'+String(c.name||'Untitled').replace(/[<>&]/g,'')+'</span><span class="run-cfg-tag">'+String(c.runtime||'lua').toUpperCase()+'</span>';
+      item.addEventListener('click',()=>{
+        $s('#runCfgName').value=c.name||'';
+        $s('#runCfgRuntime').value=c.runtime||'lua';
+        $s('#runCfgEntry').value=c.entry||'';
+        $s('#runCfgArgs').value=c.args||'';
+        $s('#runConfigModal').dataset.editing=c.id;
+        renderRunList();
+      });
+      el.appendChild(item);
+    }
+  }
+  function openRunConfig(){
+    populateRunEntry();
+    renderRunList();
+    const modal=$s('#runConfigModal');
+    const first=runConfigs[0];
+    if(first){
+      $s('#runCfgName').value=first.name||'';
+      $s('#runCfgRuntime').value=first.runtime||'lua';
+      $s('#runCfgEntry').value=first.entry||'';
+      $s('#runCfgArgs').value=first.args||'';
+      modal.dataset.editing=first.id;
+    }else{
+      $s('#runCfgName').value='Run active file';
+      $s('#runCfgRuntime').value='lua';
+      $s('#runCfgEntry').value='';
+      $s('#runCfgArgs').value='';
+      delete modal.dataset.editing;
+    }
+    modal.hidden=false;
+  }
+  function saveRunConfig(){
+    const modal=$s('#runConfigModal');
+    const cfg={
+      id:modal.dataset.editing||uidRun(),
+      name:($s('#runCfgName').value||'').trim()||'Untitled',
+      runtime:$s('#runCfgRuntime').value,
+      entry:$s('#runCfgEntry').value||null,
+      args:($s('#runCfgArgs').value||'').trim()
+    };
+    const i=runConfigs.findIndex(c=>c.id===cfg.id);
+    if(i>=0)runConfigs[i]=cfg;else runConfigs.push(cfg);
+    saveRun();
+    modal.dataset.editing=cfg.id;
+    renderRunList();
+    toast('Saved');
+  }
+  function deleteRunConfig(){
+    const modal=$s('#runConfigModal');
+    const id=modal.dataset.editing;
+    if(!id){toast('Nothing selected');return;}
+    runConfigs=runConfigs.filter(c=>c.id!==id);
+    saveRun();
+    delete modal.dataset.editing;
+    openRunConfig();
+    toast('Deleted');
+  }
+
+  /* Hook the run menu at open time */
+  const origOpen=window.openTopMenu;
+  window.openTopMenu=function(name,anchor){
+    if(name==='run'){
+      const items=[
+        {label:'Run Active File',key:'F5',run:runActiveFile},
+        {sep:true},
+        {label:'Configure Run…',run:openRunConfig}
+      ];
+      for(const c of runConfigs){
+        const nm=c.name||'Untitled';
+        items.push({label:'  '+nm,run:()=>{
+          if(c.entry){
+            const f=workspace.files.find(x=>x.id===c.entry);
+            if(!f){toast('Entry file missing');return;}
+            if(session.activeId!==f.id)activate(f.id);
+            setTimeout(runActiveFile,120);
+          }else runActiveFile();
+        }});
+      }
+      window.MENUS.run=items;
+    }
+    return origOpen(name,anchor);
+  };
+
+  /* Wire terminal + modal controls */
+  const clearBtn=$s('#clearTerm');if(clearBtn)clearBtn.addEventListener('click',termClear);
+  const closeBtn=$s('#closeTerm');if(closeBtn)closeBtn.addEventListener('click',closeTerm);
+  const c1=$s('#closeRunConfig');if(c1)c1.addEventListener('click',()=>{$s('#runConfigModal').hidden=true;});
+  const c2=$s('#saveRunConfig');if(c2)c2.addEventListener('click',saveRunConfig);
+  const c3=$s('#deleteRunCfg');if(c3)c3.addEventListener('click',deleteRunConfig);
+  const modal=$s('#runConfigModal');
+  if(modal)modal.addEventListener('click',e=>{if(e.target.id==='runConfigModal')modal.hidden=true;});
+
+  /* F5 shortcut */
+  window.addEventListener('keydown',e=>{
+    if(e.key==='F5'){e.preventDefault();runActiveFile();}
+  });
+
+  /* Expose globally so menus can call it */
+  window.runActiveFile=runActiveFile;
+  window.openRunConfig=openRunConfig;
+  window.closeTerminal=closeTerm;
+
+  /* Also patch Run menu item that palette refers to */
+  setTimeout(()=>{ if(window.MENUS) window.MENUS.run=window.MENUS.run||[]; },0);
+})();

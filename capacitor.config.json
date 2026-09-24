@@ -1,5 +1,5 @@
 {
-  "appId": "com.nullfuscator.codestudio",
+  "appId": "com.ncs.app",
   "appName": "Null Code Studio",
   "webDir": "www",
   "server": { "androidScheme": "https" },

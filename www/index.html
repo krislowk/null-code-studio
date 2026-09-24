@@ -64,6 +64,16 @@
         </div>
       </div>
     </div>
+    <div class="terminal" id="terminal" hidden>
+      <div class="terminal-head">
+        <span class="term-tab active">Output</span>
+        <div class="term-actions">
+          <button class="mini-btn" id="clearTerm" title="Clear">⌫</button>
+          <button class="mini-btn" id="closeTerm" title="Close">✕</button>
+        </div>
+      </div>
+      <pre class="terminal-body" id="terminalBody"></pre>
+    </div>
   </div>
 
   <footer class="statusbar">
@@ -191,6 +201,33 @@
         <div><kbd>Esc</kbd><span>Close Overlay</span></div>
       </div>
       <div class="modal-foot"><button class="modal-done" id="doneShortcuts">Done</button></div>
+    </div>
+  </div>
+
+  <div class="modal" id="runConfigModal" hidden>
+    <div class="modal-box run-modal">
+      <div class="modal-head">
+        <span>Run Configuration</span>
+        <button class="mini-btn" id="closeRunConfig">✕</button>
+      </div>
+      <div class="run-list" id="runList"></div>
+      <div class="run-form">
+        <label>Name</label>
+        <input id="runCfgName" placeholder="Run Lua script" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <label>Runtime</label>
+        <select id="runCfgRuntime">
+          <option value="lua">Lua 5.3 — fengari</option>
+          <option value="javascript">JavaScript — sandbox</option>
+        </select>
+        <label>Entry File</label>
+        <select id="runCfgEntry"></select>
+        <label>Arguments</label>
+        <input id="runCfgArgs" placeholder="space separated" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="modal-foot row">
+        <button class="ghost-btn" id="deleteRunCfg">Delete</button>
+        <button class="modal-done" id="saveRunConfig">Save</button>
+      </div>
     </div>
   </div>
 
