@@ -264,11 +264,12 @@ function prettyLang(l){
 /* ---- Language picker ---- */
 function setupLanguagePicker(){
   var btn=$('#sbLang');
+  var topBtn=$('#languageTopBtn');
   var menu=$('#langMenu');
   var list=$('#langMenuList');
   var search=$('#langSearch');
 
-  if(!btn||!menu||!list)return;
+  if(!menu||!list)return;
 
   var languages=[
     ['lua','Lua'],
@@ -334,6 +335,17 @@ function setupLanguagePicker(){
 
   function open(){
     render(search.value);
+
+    if(topBtn){
+      var r=topBtn.getBoundingClientRect();
+      menu.style.right='auto';
+      menu.style.left=Math.max(6,Math.min(
+        window.innerWidth-226,
+        r.right-220
+      ))+'px';
+      menu.style.bottom=(window.innerHeight-r.bottom+6)+'px';
+    }
+
     menu.hidden=false;
     setTimeout(function(){
       search.focus();
@@ -345,11 +357,21 @@ function setupLanguagePicker(){
     menu.hidden=true;
   }
 
-  btn.addEventListener('click',function(e){
-    e.stopPropagation();
-    if(menu.hidden)open();
-    else close();
-  });
+  if(btn){
+    btn.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(menu.hidden)open();
+      else close();
+    });
+  }
+
+  if(topBtn){
+    topBtn.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(menu.hidden)open();
+      else close();
+    });
+  }
 
   list.addEventListener('click',function(e){
     var option=e.target.closest('.lang-option');
@@ -373,7 +395,8 @@ function setupLanguagePicker(){
     }
 
     saveWorkspace();
-    btn.innerHTML=prettyLang(lang)+' <span class="sb-lang-arrow">⌄</span>';
+    if(btn)btn.innerHTML=prettyLang(lang)+' <span class="sb-lang-arrow">⌄</span>';
+    if(topBtn)topBtn.innerHTML='Language: '+prettyLang(lang)+' <span>⌄</span>';
     close();
     renderTabs();
     renderTree();
@@ -401,7 +424,8 @@ function setupLanguagePicker(){
   window.ncsRefreshLanguagePicker=function(){
     var f=workspace.files.find(function(x){return x.id===session.activeId;});
     var lang=f ? f.lang : 'plaintext';
-    btn.innerHTML=prettyLang(lang)+' <span class="sb-lang-arrow">⌄</span>';
+    if(btn)btn.innerHTML=prettyLang(lang)+' <span class="sb-lang-arrow">⌄</span>';
+    if(topBtn)topBtn.innerHTML='Language: '+prettyLang(lang)+' <span>⌄</span>';
     if(!menu.hidden)render(search.value);
   };
 
@@ -1232,7 +1256,7 @@ function wireUI(){
           '  _NCS_OUTPUT[#_NCS_OUTPUT + 1] = out',
           'end',
           src
-        ].join('\\n');
+        ].join('\n');
 
         var status = lauxlib.luaL_loadstring(L, to_ls(code));
 
