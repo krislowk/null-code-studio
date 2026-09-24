@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+
+www/app.js.bak
+www/app.js.bak2
+www/*.bak
