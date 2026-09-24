@@ -854,7 +854,7 @@ function wireUI(){
 (function(){
   var WASMOON_URL = 'https://cdn.jsdelivr.net/npm/wasmoon@1.16.0/dist/glue.js';
   var RUN_KEY = 'ncs.runconfigs.v1';
-  var wasmoonPromise = null;
+  var fengariPromise = null;
   var configs = [];
   try { configs = JSON.parse(localStorage.getItem(RUN_KEY) || '[]'); } catch(e){}
 
@@ -888,20 +888,27 @@ function wireUI(){
   }
   function termClear(){ var b = el('terminalBody'); if(b) b.innerHTML=''; }
 
-  function loadWasmoon(){
-    if(window.wasmoon && window.wasmoon.LuaFactory) return Promise.resolve();
-    if(wasmoonPromise) return wasmoonPromise;
-    wasmoonPromise = new Promise(function(resolve, reject){
-      var s = document.createElement('script');
-      s.src = WASMOON_URL;
-      s.onload = function(){
-        if(window.wasmoon && window.wasmoon.LuaFactory) resolve();
-        else reject(new Error('wasmoon loaded but LuaFactory missing'));
-      };
-      s.onerror = function(){ reject(new Error('Failed to load Lua runtime from CDN')); };
-      document.head.appendChild(s);
+  function loadFengari(){
+    if(window.fengari && window.fengari.lua) return Promise.resolve();
+    if(fengariPromise) return fengariPromise;
+    fengariPromise = new Promise(function(resolve, reject){
+      var paths = ['vendor/fengari-web.js','./vendor/fengari-web.js','https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js'];
+      var i = 0;
+      function tryNext(){
+        if(i >= paths.length){ reject(new Error('Could not load Lua runtime')); return; }
+        var src = paths[i++];
+        var s = document.createElement('script');
+        s.src = src;
+        s.onload = function(){
+          if(window.fengari && window.fengari.lua) resolve();
+          else tryNext();
+        };
+        s.onerror = function(){ tryNext(); };
+        document.head.appendChild(s);
+      }
+      tryNext();
     });
-    return wasmoonPromise;
+    return fengariPromise;
   }
 
   function fmtLua(v){
@@ -913,21 +920,40 @@ function wireUI(){
   }
 
   function runLua(src){
-    return loadWasmoon().then(function(){
-      var factory = new window.wasmoon.LuaFactory();
-      return factory.createEngine().then(function(lua){
-        lua.global.set('print', function(){
-          var parts = [];
-          for(var i=0; i<arguments.length; i++) parts.push(fmtLua(arguments[i]));
-          termWrite(parts.join('\t') + '\n');
-        });
-        return lua.doString(src).then(function(){
-          try { lua.global.close(); } catch(e){}
-        }, function(err){
-          try { lua.global.close(); } catch(e){}
-          throw err;
-        });
-      });
+    return loadFengari().then(function(){
+      var F = window.fengari;
+      var lua = F.lua, lauxlib = F.lauxlib, lualib = F.lualib;
+      var to_luastring = F.to_luastring, to_jsstring = F.to_jsstring;
+      var L = lauxlib.luaL_newstate();
+      lualib.luaL_openlibs(L);
+      var printFn = function(L){
+        var n = lua.lua_gettop(L);
+        var parts = [];
+        for(var i=1; i<=n; i++){
+          if(lua.lua_isstring(L, i)) parts.push(to_jsstring(lua.lua_tostring(L, i)));
+          else if(lua.lua_isnumber(L, i)) parts.push(String(lua.lua_tonumber(L, i)));
+          else if(lua.lua_isboolean(L, i)) parts.push(lua.lua_toboolean(L, i) ? 'true' : 'false');
+          else if(lua.lua_isnil(L, i)) parts.push('nil');
+          else parts.push('<value>');
+        }
+        termWrite(parts.join('\t') + '\n');
+        return 0;
+      };
+      (lua.lua_pushjsfunction || lua.lua_pushcfunction)(L, printFn);
+      lua.lua_setglobal(L, to_luastring('print'));
+      var status = lauxlib.luaL_loadstring(L, to_luastring(src));
+      if(status !== lua.LUA_OK){
+        var msg = to_jsstring(lua.lua_tostring(L, -1));
+        lua.lua_close(L);
+        throw new Error(msg);
+      }
+      var res = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
+      if(res !== lua.LUA_OK){
+        var msg2 = to_jsstring(lua.lua_tostring(L, -1));
+        lua.lua_close(L);
+        throw new Error(msg2);
+      }
+      lua.lua_close(L);
     });
   }
 
@@ -1095,4 +1121,73 @@ function wireUI(){
   window.runActiveFile = runActiveFile;
   window.openRunConfig = openRunConfig;
   window.closeTerminal = closeTerminal;
+})();
+
+
+/* __NCS_NEWFILE_MODAL__ */
+(function(){
+  var LANG_EXT = {lua:'Lua',luau:'Lua (Luau)',js:'JavaScript',mjs:'JavaScript',ts:'TypeScript',py:'Python',html:'HTML',htm:'HTML',css:'CSS',json:'JSON',md:'Markdown',sh:'Shell',bash:'Shell',yml:'YAML',yaml:'YAML',xml:'XML',txt:'Plain Text'};
+  var LANG_CODE = {lua:'lua',luau:'lua',js:'javascript',mjs:'javascript',ts:'typescript',py:'python',html:'html',htm:'html',css:'css',json:'json',md:'markdown',sh:'shell',bash:'shell',yml:'yaml',yaml:'yaml',xml:'xml',txt:'plaintext'};
+
+  function el(id){ return document.getElementById(id); }
+  function toast2(m){
+    var t = el('toast'); if(!t) return;
+    t.textContent = m; t.hidden = false;
+    t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
+    clearTimeout(toast2._t);
+    toast2._t = setTimeout(function(){ t.hidden = true; }, 1600);
+  }
+
+  function updateLangHint(){
+    var name = el('nfName').value || '';
+    var ext = name.indexOf('.') >= 0 ? name.split('.').pop().toLowerCase() : '';
+    el('nfLang').textContent = LANG_EXT[ext] || 'Plain Text';
+  }
+
+  function openModal(prefill){
+    var m = el('newFileModal'); if(!m) return;
+    el('nfName').value = prefill || 'untitled.lua';
+    updateLangHint();
+    m.hidden = false;
+    setTimeout(function(){
+      var i = el('nfName'); i.focus();
+      try{ i.setSelectionRange(0, i.value.lastIndexOf('.') > 0 ? i.value.lastIndexOf('.') : i.value.length); }catch(e){}
+    }, 60);
+  }
+  function closeModal(){ var m = el('newFileModal'); if(m) m.hidden = true; }
+
+  function createFile(){
+    var name = (el('nfName').value || '').trim();
+    if(!name){ toast2('Enter a file name'); return; }
+    try{
+      var id = 'f_' + Math.random().toString(36).slice(2, 10);
+      var ext = name.indexOf('.') >= 0 ? name.split('.').pop().toLowerCase() : '';
+      var lang = LANG_CODE[ext] || 'plaintext';
+      workspace.files.push({id:id, name:name, content:'', lang:lang});
+      if(typeof saveWorkspace === 'function') saveWorkspace();
+      if(typeof activate === 'function') activate(id);
+      closeModal();
+      toast2('Created ' + name);
+    } catch(err){
+      toast2('Error: ' + (err.message || err));
+    }
+  }
+
+  var nameInput = el('nfName');
+  if(nameInput){
+    nameInput.addEventListener('input', updateLangHint);
+    nameInput.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ e.preventDefault(); createFile(); }
+      if(e.key === 'Escape'){ e.preventDefault(); closeModal(); }
+    });
+  }
+  var btn;
+  if((btn = el('closeNewFileModal')))  btn.addEventListener('click', closeModal);
+  if((btn = el('cancelNewFileModal'))) btn.addEventListener('click', closeModal);
+  if((btn = el('confirmNewFileModal'))) btn.addEventListener('click', createFile);
+  var m = el('newFileModal');
+  if(m) m.addEventListener('click', function(e){ if(e.target.id === 'newFileModal') closeModal(); });
+
+  /* Override the global newFile so every menu / palette entry uses the modal */
+  window.newFile = function(){ openModal(); };
 })();

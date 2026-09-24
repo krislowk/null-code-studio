@@ -269,3 +269,53 @@ button{font-family:inherit}
 .sel-btn{background:transparent;border:none;color:#d4d4d4;font-family:inherit;font-size:12px;padding:9px 15px;border-radius:7px;cursor:pointer;transition:background .12s;white-space:nowrap;font-weight:500;letter-spacing:.02em}
 .sel-btn:active{background:#2a2a2a;color:#fff}
 .sel-close{color:#8a8a8a;padding:9px 12px;font-size:13px}
+
+/* ========= Anti-AI font + radius pass ========= */
+body, button, input, select, textarea, .menu-item, .tab, .statusbar,
+.panel-header, .file-item, .palette-item, .menu-entry, .modal-head,
+.ghost-btn, .sel-btn, .modal-done, .setting-row, .welcome-left p,
+.recent-item, .search-file-header, .search-opt, .sb-item, .run-form label {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif !important;
+  letter-spacing: 0 !important;
+}
+#editor, .terminal-body, .breadcrumbs, .search-hit, .search-hit mark {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace !important;
+}
+.welcome-left h1{
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: #e5e5e5 !important;
+  font-weight: 300 !important;
+  letter-spacing: -0.01em !important;
+}
+body{
+  background-image: none !important;
+  background: #0a0a0a !important;
+}
+.panel-header, .ws-title{
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+}
+.tab, .menu-item, .icon-btn, .mini-btn, .tab .t-close{
+  border-radius: 3px !important;
+}
+.ghost-btn, .sel-btn, .modal-done, .stepper, #searchInput,
+.run-form input, .run-form select, .search-opt, .palette-input{
+  border-radius: 3px !important;
+}
+.modal-box, .palette-box, .menu-dropdown, .sel-bar{
+  border-radius: 6px !important;
+}
+.sel-bar{ padding: 3px !important; }
+.modal-done, .ghost-btn{ font-weight: 500 !important; }
+.statusbar{ font-size: 11px !important; }
+
+.nf-modal .modal-body{padding:16px;display:flex;flex-direction:column;gap:6px}
+.nf-modal label{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:#5a5a5a;font-weight:600;margin-bottom:2px}
+.nf-modal input{background:#151515;border:1px solid #2a2a2a;color:#e5e5e5;padding:11px 12px;border-radius:3px;font-size:14px;font-family:inherit;outline:none;transition:border-color .15s}
+.nf-modal input:focus{border-color:#4a4a4a}
+.nf-hint{display:flex;justify-content:space-between;font-size:11px;color:#6a6a6a;margin-top:8px}
+.nf-lang{color:#e5e5e5;font-weight:500}
