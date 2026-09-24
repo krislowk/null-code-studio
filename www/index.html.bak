@@ -16,10 +16,10 @@
       <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M2 3h12v1.2H2zm0 4.4h12v1.2H2zm0 4.4h12v1.2H2z"/></svg>
     </button>
     <div class="menu-items">
-      <button class="menu-item" data-menu="file" onclick="ncsOpenMenu(event,'file',this)">File</button>
-      <button class="menu-item" data-menu="edit" onclick="ncsOpenMenu(event,'edit',this)">Edit</button>
-      <button class="menu-item" data-menu="view" onclick="ncsOpenMenu(event,'view',this)">View</button>
-      <button class="menu-item" data-menu="run"  onclick="ncsOpenMenu(event,'run',this)">Run</button>
+      <button class="menu-item" data-menu="file">File</button>
+      <button class="menu-item" data-menu="edit">Edit</button>
+      <button class="menu-item" data-menu="view">View</button>
+      <button class="menu-item" data-menu="run">Run</button>
     </div>
     <div class="title-center" id="titleCenter">
       <span class="title-dot"></span>
