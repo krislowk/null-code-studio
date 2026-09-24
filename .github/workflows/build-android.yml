@@ -16,6 +16,10 @@ jobs:
         with: { distribution: temurin, java-version: '21' }
       - name: Install deps
         run: npm install
+      - name: Generate Android icons
+        run: |
+          npm install @capacitor/assets --no-save
+          npx capacitor-assets generate --android
       - name: Sync Capacitor
         run: npx cap sync android
       - name: Build debug APK
